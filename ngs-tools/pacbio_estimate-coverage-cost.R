@@ -1,4 +1,4 @@
-#!/packages/R/2.15.0/lib64/R/bin/Rscript
+#!/usr/bin/env Rscript
 
 # 19.07.2012 14:37:45 EDT
 # Harm van Bakel <hvbakel@gmail.com>

@@ -24,9 +24,9 @@ if ($sHelp) {
    die <<HELP
 
    Usage: $sScriptName [options] <fasta-file>
-   
-   Reflow sequences in a fasta file so that each sequence
-   line is set to the specified length.
+  
+   Calculate the GC content of sequences within a multi-fasta 
+   file across a sliding window applied to each sequence. 
     
    Options:
     -w --window <integer>
