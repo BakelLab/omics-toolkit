@@ -1,0 +1,153 @@
+#!/usr/bin/env perl
+
+# Filter the lines of a file for a set of identifiers
+
+# MODULES
+use strict;
+use Getopt::Long;
+use IntersectID qw(read_ids_from_col remap_hash_keys_from_file);
+
+# GET PARAMETERS
+my $sHelp          = 0;
+my $sFilterFile    = '';
+my $nFilterCol     = 1;
+my $sIDfile        = '';
+my $nIDcol         = 1;
+my $nFilterOffset  = 1;
+my $nIDoffset      = 1;
+my $sMappingFile   = '';
+my $nMappingOffset = 1;
+my $sSplitChar     = '';
+my $sFieldSep      = "\t";
+my $nCaseSensitive = 0;
+GetOptions("help!"  => \$sHelp,
+           "ff:s"   => \$sFilterFile,
+           "fc:i"   => \$nFilterCol,
+           "fo:i"   => \$nFilterOffset,
+           "if:s"   => \$sIDfile,
+           "ic:i"   => \$nIDcol,
+           "io:i"   => \$nIDoffset,
+           "mf:s"   => \$sMappingFile,
+           "mo:i"   => \$nMappingOffset,
+           "fs:s"   => \$sFieldSep,
+           "sc:s"   => \$sSplitChar,
+           "cs!"    => \$nCaseSensitive);
+
+
+# PRINT HELP
+$sHelp = 1 unless($sFilterFile and $nFilterCol and $sIDfile and $nIDcol);
+if ($sHelp) {
+    my $sScriptName = ($0 =~ /^.*\/(.+$)/) ? $1 : $0;
+    die <<HELP
+
+    $sScriptName -ff <match file> -fc <match column> -if <ID file> -ic <ID column>
+
+    -ff <string>
+      The file that needs to be filtered for a list of identifiers
+    -if <string>
+      The name of the file containing the identifiers that you want to filter for
+      
+    Options:
+    -fc <integer>
+      The column number containing the identifiers in the match file
+      default: $nFilterCol
+    -fo <integer>
+      The number of the line to start filtering at
+      default: $nFilterOffset
+    -ic <integer>
+      The column number containing the identifiers in the ID file
+      default: $nIDcol
+    -io <integer>
+      The number of the line in the ID file to start extracting identifiers from
+      default: $nIDoffset
+    -mf <string>, optional
+      Use a tab-delimited mapping file to match IDs between the ID and filter file. 
+      The file must have two columns, where the first column contains the identifiers
+      from ID file and the second column the matching identifiers from the filter file.
+    -mo <integer>
+      Number of the first line in the mapping file to start extracting mappings
+      default: $nMappingOffset
+    -fs <string>
+      Field separator. Default: <tab>
+    -sc <string>
+      Split character to use in case multiple identifiers are concatenated together
+      on one line.
+    -cs
+      Do case-sensitive matching, the default is to do case-insensitive matching
+    -help
+      This help message
+      
+HELP
+}
+
+
+##########
+## MAIN ##
+##########
+
+# Check arguments and set column number from 1-based to 0-based
+my @asErrors;
+push @asErrors, "Error: filter column must be a positive integer\n"    unless ($nFilterCol =~ /^[1-9]\d*$/);
+push @asErrors, "Error: ID column must be a positive integer\n"        unless ($nIDcol =~ /^[1-9]\d*$/);
+die join("\n", @asErrors), "\n" if (@asErrors);
+
+
+# Read the identifiers into a lookup table
+my ($rLUT, $rDuplicates) = read_ids_from_col(file=>$sIDfile, id_col=>$nIDcol, offset=>$nIDoffset, fieldsep=>$sFieldSep,
+                                             split_char=>$sSplitChar, preserve_case=>$nCaseSensitive);
+
+# Remap the LUT if we have a mapping file
+if ($sMappingFile){
+   $rLUT = remap_hash_keys_from_file(lut=>$rLUT, file=>$sMappingFile, offset=>$nMappingOffset, fieldsep=>$sFieldSep,
+                                     preserve_case=>$nCaseSensitive);
+}
+
+# Read the filter file and filter on identifiers
+$nFilterCol--;
+my $nFFnoMatches = 0;
+open MATCH, $sFilterFile or die "Can't open $sFilterFile: $!\n";
+while(<MATCH>){
+   # Print lines before the filter offset
+   if ($. < $nFilterOffset){
+      print;
+      next;
+   }
+   
+   # Apply filtering to all other lines
+   next if /^\s*$/;
+   if (/^\s*#/) {print; next;}
+   s/[\n\r]//g;
+   s/\\t/;/g;
+   my (@asLine) = split /$sFieldSep/, $_, -1;
+   if ($nFilterCol < @asLine){
+      my $sIDfield = $asLine[$nFilterCol];
+      
+      # Collect IDs
+      my @asIDs;
+      if ($sSplitChar){
+         (@asIDs) = split /$sSplitChar/, $sIDfield;
+      }
+      else{
+         push @asIDs, $sIDfield;
+      }
+      
+      # Print if any of the IDs are matching
+      foreach my $sID (@asIDs){
+         $sID =~ s/^\s+//; # Remove leading whitespace
+         $sID =~ s/\s+$//; # Remove trailing whitespace
+         $sID = lc($sID) unless ($nCaseSensitive);
+         unless(exists($rLUT->{$sID})){
+            print "$_\n";
+            last;
+         }
+         else{
+            $nFFnoMatches++;
+         }
+      }
+   }
+   else{
+      die "Error: number of fields in the filter file is lower than the supplied filter column number on line $.\n";
+   }
+}
+close MATCH;
+warn "Warning: $nFFnoMatches entries were dropped during filtering\n" if ($nFFnoMatches);

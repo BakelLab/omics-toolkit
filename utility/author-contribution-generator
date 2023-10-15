@@ -1,0 +1,89 @@
+#!/usr/bin/env perl
+
+# 01.05.2020 08:03:20 EDT
+# Harm van Bakel <hvbakel@gmail.com>
+
+# MODULES
+use strict;
+use warnings;
+use Getopt::Long;
+
+# GET PARAMETERS
+my $sHelp     = 0;
+my $nAbbrCol  = 3;
+my $nContCol  = 6;
+GetOptions("help!"   => \$sHelp,
+           "abbr:n"  => \$nAbbrCol,
+           "cont:n"  => \$nContCol);
+
+# PRINT HELP
+$sHelp = 1 unless(@ARGV>0);
+if ($sHelp) {
+   my $sScriptName = ($0 =~ /^.*\/(.+$)/) ? $1 : $0;
+   die <<HELP
+
+   Usage: $sScriptName
+   
+   Convert tab-delimited file of author contributions to formatted text.
+   First row must have a header that contains the contribution descriptions.
+   Subsequent rows should list each author with (unique) author abbreviations 
+   in one column. Each contribution column should have an empty value if an
+   author did not participate in the contribution.
+   
+   Arguments:
+    -a <integer>
+      Column with author abbreviations. Default: $nAbbrCol
+    -c <integer>
+      Number of the first column with contributions. Default: $nContCol
+    -help
+      This help message
+   
+HELP
+}
+
+
+##########
+## MAIN ##
+##########
+
+# Process arguments
+die "Error: -a argument needs to be an integer greater than zero\n" unless ($nAbbrCol =~ /^\d+$/ and $nAbbrCol>0);
+die "Error: -c argument needs to be an integer greater than zero\n" unless ($nContCol =~ /^\d+$/ and $nContCol>0);
+$nAbbrCol--;
+$nContCol--;
+
+# Open file
+open IN, "<$ARGV[0]" or die "Error: can't open '$ARGV[0]': $!\n";
+
+# Read header
+my $sHeader  = <IN>;
+my @asHeader = split /\t/, $sHeader;
+die "Error: author abbreviations or contributions columns outside of data range\n" unless ($nAbbrCol < @asHeader and $nContCol < @asHeader);
+
+# Read authors
+my %hContributions;
+while (<IN>){
+   next if (/^\s*$/);
+   next if (/^ *#/);
+   s/[\n\r]+$//;
+   my @asContribs = split /\t/;
+   for ( my $i=$nContCol ; $i < @asContribs ; $i++){
+      push @{$hContributions{$i}}, $asContribs[$nAbbrCol] if ($asContribs[$i]);
+   }
+}
+close IN;
+
+# Write formatted contribution section
+my @asFormattedContributions;
+for ( my $i=$nContCol ; $i < @asHeader ; $i++){
+   if (exists $hContributions{$i}){
+      my @AU  = @{$hContributions{$i}};
+      $AU[$#AU] = "and $AU[$#AU]" if (@AU > 1);
+      my $sAU = join(", ", @AU);
+      my $sCN = lcfirst($asHeader[$i]);
+      $sCN =~ s/\.+$//;
+      push @asFormattedContributions, "$sAU $sCN";
+   }
+}
+
+print join(". ", @asFormattedContributions), "\n";

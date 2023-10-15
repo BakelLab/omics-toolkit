@@ -1,0 +1,218 @@
+#!/usr/bin/env perl
+
+# Filter the lines of a file for a set of identifiers
+
+# MODULES
+use strict;
+use Getopt::Long;
+use IntersectID qw(read_ids_from_row read_ids_from_col remap_hash_keys_from_file);
+
+# GET PARAMETERS
+my $sHelp          = 0;
+my $sFilterFile    = '';
+my $nFilterRow     = 1;
+my $nFilterOffset  = 1;
+my $sIDfile        = '';
+my $nIDrow         = 0;
+my $nIDcol         = 0;
+my $nIDoffset      = 1;
+my $sMappingFile   = '';
+my $nMappingOffset = 1;
+my $sSplitChar     = '';
+my $sFieldSep      = "\t";
+my $nCaseSensitive = 0;
+my $nReorder       = 0;
+GetOptions("help!"  => \$sHelp,
+           "ff:s"   => \$sFilterFile,
+           "fr:i"   => \$nFilterRow,
+           "fo:i"   => \$nFilterOffset,
+           "if:s"   => \$sIDfile,
+           "ir:i"   => \$nIDrow,
+           "ic:i"   => \$nIDcol,
+           "io:i"   => \$nIDoffset,
+           "fs:s"   => \$sFieldSep,
+           "sc:s"   => \$sSplitChar,
+           "cs!"    => \$nCaseSensitive,
+           "mf:s"   => \$sMappingFile,
+           "mo:i"   => \$nMappingOffset,
+           "ro!"    => \$nReorder);
+$nIDcol = 1 unless ($nIDcol or $nIDrow);
+
+# PRINT HELP
+$sHelp = 1 unless($sFilterFile and $nFilterRow and $sIDfile);
+if ($sHelp) {
+    my $sScriptName = ($0 =~ /^.*\/(.+$)/) ? $1 : $0;
+    die <<HELP
+
+    $sScriptName -ff <filter file> -if <ID file> [options]
+    
+    Filters a file to return only the columns that match a set of identifiers 
+    specified in an ID file.    
+
+    Options:
+    -ff <string>
+      The file that needs to be filtered
+    -if <string>
+      The name of the file containing the identifiers that you want to filter on
+      
+    Options:
+    -fr <integer>
+      The column number containing the identifiers in the filter file
+      default: $nFilterRow
+    -fo <integer>
+      The number of the first column to consider for filtering
+      default: $nFilterOffset
+    -ic <integer>
+      The column containing the identifiers in the ID file
+      default: 1
+    -ir <integer>
+      The row containing the identifiers in the ID file. Mutually exclusive with -ir 
+    -io <integer>
+      The number of the row or column in the ID file to start extracting identifiers from
+      default: $nIDoffset
+    -mf <string>, optional
+      Use a tab-delimited mapping file to match IDs between the ID and filter file. 
+      The file must have two columns, where the first column contains the identifiers
+      from ID file and the second column the matching identifiers from the filter file.
+    -mo <integer>
+      Number of the first line in the mapping file to start extracting mappings
+      default: $nMappingOffset
+    -fs <string>
+      Field separator. Default: <tab>
+    -sc <string>
+      Split character to use in case multiple identifiers are concatenated together
+      in one field.
+    -cs
+      Do case-sensitive matching, the default is to do case-insensitive matching
+    -ro
+      Reorder the columns in the filtered files according to the IDs in the ID file
+    -help
+      This help message
+      
+HELP
+}
+
+
+##########
+## MAIN ##
+##########
+
+# Check arguments
+my @asErrors;
+push @asErrors, "Error: filter row must be a positive integer\n"        unless ($nFilterRow =~ /^[1-9]\d*$/);
+push @asErrors, "Error: ID row must be a positive integer\n"            unless ($nIDrow =~ /^\d+$/);
+push @asErrors, "Error: ID column must be a positive integer\n"         unless ($nIDcol =~ /^\d+$/);
+push @asErrors, "Error: ID row and ID column cannot be used together\n" if($nIDrow > 0 and $nIDcol > 0);
+push @asErrors, "Error: ID offset must be a positive integer\n"         unless($nIDoffset =~ /^[1-9]\d*$/);
+push @asErrors, "Error: filter offset must be a positive integer\n"     unless($nFilterOffset =~ /^[1-9]\d*$/);
+die join("\n", @asErrors), "\n" if (@asErrors);
+
+# Read the identifiers in the ID file
+# Note that rows are the default, so start processing the column argument first (i.e overriding the default)
+my ($rLUT, $rDuplicates);
+if ($nIDcol >0){
+   ($rLUT, $rDuplicates) = read_ids_from_col(file=>$sIDfile, id_col=>$nIDcol, offset=>$nIDoffset, fieldsep=>$sFieldSep,
+                                             split_char=>$sSplitChar, preserve_case=>$nCaseSensitive);
+}
+elsif ($nIDrow >0){
+   ($rLUT, $rDuplicates) = read_ids_from_row(file=>$sIDfile, id_row=>$nIDrow, offset=>$nIDoffset, fieldsep=>$sFieldSep,
+                                             split_char=>$sSplitChar, preserve_case=>$nCaseSensitive);
+}
+else{
+   die "Error: missing ID row or ID column\n";
+}
+
+# Check for duplicate IDs in the ID file
+if ($nReorder and keys(%$rDuplicates)){
+   die "Error: ID file cannot have duplicate IDs when column reordering is in effect\n";
+}
+
+# Remap the LUT if we have a mapping file
+if ($sMappingFile){
+   $rLUT = remap_hash_keys_from_file(lut=>$rLUT, file=>$sMappingFile, offset=>$nMappingOffset, fieldsep=>$sFieldSep,
+                                     preserve_case=>$nCaseSensitive);
+}
+
+
+# Get a numeric array with the subset of columns to extract
+my @anColsToKeep = get_columns_for_intersection(file=>$sFilterFile, lut=>$rLUT, offset=>$nFilterOffset, fieldsep=>$sFieldSep,
+                                                id_row=>$nFilterRow, preserve_case=>$nCaseSensitive, reorder=>$nReorder);
+
+
+# And finally, do the actual filtering
+open FILTER, $sFilterFile or die "Error: can't open '$sFilterFile': $!\n";
+while (<FILTER>){
+   s/[\n\r]+$//;
+   my @asLine = split /$sFieldSep/, $_, -1;
+   if (@asLine >= @anColsToKeep){
+      print join ($sFieldSep, @asLine[@anColsToKeep]), "\n";
+   }
+   else{
+      die "Error: column selection out of range";
+   }
+}
+close FILTER;
+
+
+###############
+# SUBROUTINES #
+###############
+
+# get_columns_for_intersection
+#
+# Get the (zero-based) IDs of the columns to be kept after filtering
+sub get_columns_for_intersection {
+   my %args = (file           => undef,
+               lut            => undef,
+               offset         => 1,
+               id_row         => 1,
+               preserve_case  => 1,
+               reorder        => 0,
+               fieldsep       => "\t",
+               @_);
+
+   # Open the filter file and extract the filter column IDs
+   $args{offset}--;
+   my %hColIDs;
+   open IN, $args{file} or die "Error: can't open '$args{file}': $!\n";
+   while (<IN>){
+      if ($. == $args{id_row}){
+         s/[\n\r]+$//;
+         my @asLine = split /$args{fieldsep}/, $_, -1;
+         if ($args{offset} <= $#asLine){
+            for (my $i=$args{offset} ; $i<@asLine ; $i++){
+               $asLine[$i] = lc($asLine[$i]) unless($args{preserve_case});
+               if(exists $args{lut}{$asLine[$i]}){
+                  $hColIDs{$i} = $args{lut}{$asLine[$i]};
+               }
+            }
+            my $nDroppedCols = scalar(@asLine) - $args{offset} - scalar(keys(%hColIDs));
+            if ($nDroppedCols){
+               if ($nDroppedCols == 1){
+                  warn "Warning: $nDroppedCols column was dropped from the filtered file\n";
+               }
+               else{
+                  warn "Warning: $nDroppedCols columns were dropped from the filtered file\n";
+               }
+            }
+         }
+         else{
+            die "Error: number of fields in the filter file is lower than the filter offset on line $.\n";
+         }
+         last;
+      }
+   }
+   close IN;
+   
+   # Return the selected columns in the order of the filter file or the ID file
+   my @anFilterExcludeCols = 0 .. $args{offset}-1;
+   if ($args{reorder}){
+      return( @anFilterExcludeCols, sort {$hColIDs{$a} <=> $hColIDs{$b} || $a <=> $b } (keys %hColIDs) );
+   }
+   else{
+      return( @anFilterExcludeCols, sort {$a <=> $b} (keys %hColIDs) );
+   }
+    
+}
+
+

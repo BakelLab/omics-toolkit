@@ -1,0 +1,25 @@
+#!/bin/bash
+
+module purge all
+unset PYTHONPATH
+unset PERL5LIB
+unset R_LIBS
+module load anaconda2
+source activate rnaseqpipeline_2020-02
+export PATH=`echo $PATH | tr ":" "\n" | grep -vP "^${ANACONDAHOME}bin$" | tr "\n" ":"` # Remove path to anaconda bin dir at this point to avoid python issues
+
+# Set up the proxy server for GO annotations
+export HTTP_PROXY="http://proxy.mgmt.hpc.mssm.edu:8123"
+
+# Get a timestamp for the pipeline log
+timestamp="$(date +"%F_%H-%M-%S")"
+if [ -n "$LSB_JOBID" ]
+then
+   timestamp="${timestamp}_lsf${LSB_JOBID}"
+fi
+
+if (( $# == 0 )); then
+   plot-heatmap.R
+else
+   plot-heatmap.R $@ > pipeline_${timestamp}.log 2>&1
+fi

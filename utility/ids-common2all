@@ -1,0 +1,71 @@
+#!/usr/bin/env perl
+
+# 08.11.2009 13:35:20 EST
+# Harm van Bakel <hvbakel@gmail.com>
+
+# MODULES
+use strict;
+use warnings;
+use Getopt::Long;
+
+# GET PARAMETERS
+my $sHelp           = 0;
+my $nColID          = 1;
+my $flCaseSensitive = 0;
+my $sFieldSep       = "\t";
+GetOptions("help!"  => \$sHelp,
+           "cs!"    => \$flCaseSensitive,
+           "ic:n"   => \$nColID,
+           "fs:s"   => \$sFieldSep);
+
+# PRINT HELP
+$sHelp = 1 unless(@ARGV>1);
+if ($sHelp) {
+   my $sScriptName = ($0 =~ /^.*\/(.+$)/) ? $1 : $0;
+   die <<HELP
+
+   Usage: $sScriptName [-c -s] <file1> .. <fileN>
+
+   Returns a list of identifiers that are shared between all
+   the files supplied to the script.
+
+   Options:    
+    -ic <integer>
+      Column containing the identifier
+      default: $nColID
+    -fs <string>
+      Field separator. Default: <tab>
+    -cs
+      Do case-sensitive matching (default is to ignore case)
+    -help
+      This help message
+   
+HELP
+}
+
+
+###########
+## START ##
+###########
+
+$nColID--; # Make column id zero-based
+my %hIDs;
+for my $sFile (@ARGV){
+   open IN, $sFile or die "Error: can't open '$sFile': $!\n";
+   while (<IN>){
+      next if /^\s*$/;
+      next if /^\s*#/;
+      s/[\n\r]$//g;
+      my (@asLine) = split /$sFieldSep/, $_, -1;
+      die "Error: no ID column found in file '$sFile', line $.\n" if ($nColID > $#asLine);
+      my $sKey = $flCaseSensitive ? $asLine[$nColID] : uc($asLine[$nColID]);
+      $hIDs{$sKey}{'identifier'} = $asLine[$nColID] unless (exists $hIDs{$sKey}{'identifier'});
+      $hIDs{$sKey}{'count'}++;
+   }
+   close IN;
+}
+
+for my $sKey (keys %hIDs){
+   print $hIDs{$sKey}{'identifier'}, "\n" if ($hIDs{$sKey}{'count'} == scalar(@ARGV) );
+}
+

@@ -1,0 +1,139 @@
+#!/usr/bin/env perl
+
+# 24.01.2010 15:48:51 EST
+# Harm van Bakel <hvbakel@gmail.com>
+
+# MODULES
+use strict;
+use warnings;
+use Getopt::Long;
+use IntersectID qw(read_ids_from_col read_ids_from_row remap_hash_keys_from_file);
+
+# GET PARAMETERS
+my $sHelp          = 0;
+my $nLeftCol       = 0;
+my $nLeftRow       = 0;
+my $nLeftOffset    = 1;
+my $nRightCol      = 0;
+my $nRightRow      = 0;
+my $nRightOffset   = 1;
+my $sMappingFile   = '';
+my $nMappingOffset = 1;
+my $sSplitChar     = '';
+my $sFieldSep      = "\t";
+my $nCaseSensitive = 0;
+GetOptions("help!"  => \$sHelp,
+           "lc:i"   => \$nLeftCol,
+           "lr:i"   => \$nLeftRow,
+           "lo:i"   => \$nLeftOffset,
+           "rc:i"   => \$nRightCol,
+           "rr:i"   => \$nRightRow,
+           "ro:i"   => \$nRightOffset,
+           "mf:s"   => \$sMappingFile,
+           "mo:i"   => \$nMappingOffset,
+           "fs:s"   => \$sFieldSep,
+           "sc:s"   => \$sSplitChar,
+           "cs!"    => \$nCaseSensitive);
+$nLeftCol  = 1 unless ($nLeftCol or $nLeftRow);
+$nRightCol = 1 unless ($nRightCol or $nRightRow);
+
+# PRINT HELP
+$sHelp = 1 unless(@ARGV==2);
+if ($sHelp) {
+   my $sScriptName = ($0 =~ /^.*\/(.+$)/) ? $1 : $0;
+   die <<HELP
+
+   Usage: $sScriptName [options] <left-file> <right-file>
+
+   Returns a list of identifiers that are shared between a
+   column or row in the supplied files.
+
+   Options:  
+    -lc <integer>
+      The column to compare in the 'right' file
+      default: 1
+    -lr <integer>
+      The row to compare in the 'right' file. Mutually exclusive with -lc
+    -lo <integer>
+      The number of the line in the 'left' file to start extracting identifiers from
+    -rc <integer>
+      The column to compare in the 'right' file
+      default: 1
+    -rr <integer>
+      The row to compare in the 'right' file. Mutually exclusive with -rc 
+    -ro <integer>
+      The number of the line in the 'right' file to start extracting identifiers from
+    -mf <string>, optional
+      Use a tab-delimited mapping file to match IDs between the two files. The file 
+      must have two columns, where the first column contains the identifiers from right
+      file and the second column the matching identifiers from the left file.
+    -mo <integer>
+      Number of the first line in the mapping file to start extracting mappings
+      default: $nMappingOffset
+    -fs <string>
+      Field separator. Default: <tab>
+    -cs
+      Do case-sensitive matching, the default is to do case-insensitive matching
+    -help
+      This help message
+   
+HELP
+}
+
+
+##########
+## MAIN ##
+##########
+
+# Check arguments
+my @asErrors;
+push @asErrors, "Error: left file column must be a positive integer\n"          unless ($nLeftCol     =~ /^\d+$/);
+push @asErrors, "Error: left file row must be an integer\n"                     unless ($nLeftRow     =~ /^\d+$/);
+push @asErrors, "Error: left file offset must be a positive integer\n"          unless ($nLeftOffset  =~ /^[1-9]\d*$/);
+push @asErrors, "Error: left row and left column cannot both be specified\n"    if($nLeftCol > 0 and $nLeftRow > 0);
+push @asErrors, "Error: right file column must be a positive integer\n"         unless ($nRightCol    =~ /^\d+$/);
+push @asErrors, "Error: right file row must be a positive integer\n"            unless ($nRightRow    =~ /^\d+$/);
+push @asErrors, "Error: right file offset must be a positive integer\n"         unless ($nRightOffset =~ /^[1-9]\d*$/);
+push @asErrors, "Error: right row and right column cannot both be specified\n"  if($nRightCol > 0 and $nRightRow > 0);
+die join("\n", @asErrors), "\n" if (@asErrors);
+
+# Read IDs from the left file, preserving the case of the IDs
+my ($rLeftLUT, $rLeftDup);
+if ($nLeftRow >0){
+   ($rLeftLUT, $rLeftDup)   = read_ids_from_row(file=>$ARGV[0], id_col=>$nLeftRow, offset=>$nLeftOffset, fieldsep=>$sFieldSep,
+                                                split_char=>$sSplitChar, preserve_case=>1);
+}
+elsif ($nLeftCol >0){
+   ($rLeftLUT, $rLeftDup)   = read_ids_from_col(file=>$ARGV[0], id_col=>$nLeftCol, offset=>$nLeftOffset, fieldsep=>$sFieldSep,
+                                                split_char=>$sSplitChar, preserve_case=>1);
+}
+else{
+   die "Error: missing left ID column or ID row\n";
+}
+
+# Read the IDs from the right file
+my ($rRightLUT, $rRightDup); 
+if ($nRightRow >0){
+   ($rRightLUT, $rRightDup)   = read_ids_from_row(file=>$ARGV[1], id_col=>$nRightRow, offset=>$nRightOffset, fieldsep=>$sFieldSep,
+                                                  split_char=>$sSplitChar, preserve_case=>$nCaseSensitive);
+}
+elsif ($nRightCol >0){
+   ($rRightLUT, $rRightDup)   = read_ids_from_col(file=>$ARGV[1], id_col=>$nRightCol, offset=>$nRightOffset, fieldsep=>$sFieldSep,
+                                                  split_char=>$sSplitChar, preserve_case=>$nCaseSensitive);
+}
+else{
+   die "Error: missing right ID column or ID row\n";
+}
+
+# Remap the right file LUT if we have a mapping file
+if ($sMappingFile){
+   $rRightLUT = remap_hash_keys_from_file(lut=>$rRightLUT, file=>$sMappingFile, offset=>$nMappingOffset, fieldsep=>$sFieldSep,
+                                          preserve_case=>$nCaseSensitive);
+}
+
+# Process the hits
+foreach my $sLeftKey (sort {$rLeftLUT->{$a} <=> $rLeftLUT->{$b}} keys %$rLeftLUT){
+   my $sCompKey = $nCaseSensitive ? $sLeftKey : lc($sLeftKey);
+   print "$sLeftKey\n" if (exists $rRightLUT->{$sCompKey});
+}
+

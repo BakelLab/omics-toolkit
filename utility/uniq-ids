@@ -1,0 +1,99 @@
+#!/usr/bin/env perl
+
+# 24.01.2010 15:48:51 EST
+# Harm van Bakel <hvbakel@gmail.com>
+
+# MODULES
+use strict;
+use warnings;
+use Getopt::Long;
+use IntersectID qw(read_ids_from_col read_ids_from_row);
+
+# GET PARAMETERS
+my $sHelp        = 0;
+my $nIDcol       = 0;
+my $nIDrow       = 0;
+my $nIDoffset    = 1;
+my $sSplitChar   = '';
+my $sFieldSep    = "\t";
+my $nCaseSensitive = 0;
+GetOptions("help!"  => \$sHelp,
+           "ic:i"   => \$nIDcol,
+           "ir:i"   => \$nIDrow,
+           "io:i"   => \$nIDoffset,
+           "fs:s"   => \$sFieldSep,
+           "sc:s"   => \$sSplitChar,
+           "cs!"    => \$nCaseSensitive);
+$nIDcol  = 1 unless ($nIDcol or $nIDrow);
+
+# PRINT HELP
+$sHelp = 1 unless(@ARGV==1);
+if ($sHelp) {
+   my $sScriptName = ($0 =~ /^.*\/(.+$)/) ? $1 : $0;
+   die <<HELP
+
+   Usage: $sScriptName [options] <file>
+
+   Returns a list of unique identifiers in a row or column
+   of a text file.
+   
+   Options:
+    -ic <integer>
+      The column to extract unique IDs from
+      default: 1
+    -ir <integer>
+      The row to extract unique IDs from. Mutually exclusive with -ic
+    -io <integer>
+      The number of the row or column to start extracting identifiers from. Default: $nIDoffset
+    -sc <string>
+      Split character to use in case multiple identifiers are concatenated together
+      in one field.
+    -fs <string>
+      Field separator. Default: <tab>
+    -cs
+      Do case-sensitive matching, the default is to do case-insensitive matching
+    -help
+      This help message
+   
+HELP
+}
+
+
+##########
+## MAIN ##
+##########
+
+# Check arguments
+my @asErrors;
+push @asErrors, "Error: ID column must be a positive integer\n"          unless ($nIDcol     =~ /^\d+$/);
+push @asErrors, "Error: ID row must be an integer\n"                     unless ($nIDrow     =~ /^\d+$/);
+push @asErrors, "Error: ID offset must be a positive integer\n"          unless ($nIDoffset  =~ /^[1-9]\d*$/);
+push @asErrors, "Error: ID row and ID column cannot be used together\n"  if($nIDrow > 0 and $nIDcol > 0);
+die join("\n", @asErrors), "\n" if (@asErrors);
+
+# Read IDs, preserving the case
+my ($rLUT, $rDup);
+if ($nIDrow >0){
+   ($rLUT, $rDup)   = read_ids_from_row(file=>$ARGV[0], id_col=>$nIDrow, offset=>$nIDoffset, fieldsep=>$sFieldSep,
+                                        split_char=>$sSplitChar, preserve_case=>1);
+}
+elsif ($nIDcol >0){
+   ($rLUT, $rDup)   = read_ids_from_col(file=>$ARGV[0], id_col=>$nIDcol, offset=>$nIDoffset, fieldsep=>$sFieldSep,
+                                        split_char=>$sSplitChar, preserve_case=>1);
+}
+else{
+   die "Error: missing left ID column or ID row\n";
+}
+
+# Print output
+my %hCaseInsensitive;
+foreach my $sID (sort {$rLUT->{$a} <=> $rLUT->{$b}} keys(%$rLUT)){
+   if ($nCaseSensitive){
+      print "$sID\n";
+   }
+   else{
+      print "$sID\n" unless(exists $hCaseInsensitive{lc($sID)});
+      $hCaseInsensitive{lc($sID)}=0;
+   }
+}
+

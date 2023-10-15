@@ -1,0 +1,180 @@
+#!/usr/bin/env perl
+
+# 19.09.2009 12:01:25 EDT
+# Harm van Bakel <hvbakel@gmail.com>
+
+# MODULES
+use strict;
+use warnings;
+use Getopt::Long;
+
+# GET PARAMETERS
+my $sHelp          = 0;
+my $nAbove         = 'NA';
+my $nBelow         = 'NA';
+my $flEqA          = 0;
+my $flEqB          = 0;
+my $nRowCount      = 1;
+my $nFirstDataRow  = 2;
+my $nFirstDataCol  = 2;
+GetOptions("help!"         => \$sHelp,
+           "above:f"       => \$nAbove,
+           "below:f"       => \$nBelow,
+           "eqa!"          => \$flEqA,
+           "eqb!"          => \$flEqB,
+           "data-row:s"    => \$nFirstDataRow,
+           "data-col:s"    => \$nFirstDataCol,
+           "count:s"       => \$nRowCount);
+my $sFile = shift @ARGV;
+
+
+# PRINT HELP
+$sHelp = 1 unless($sFile);
+if ($sHelp) {
+   my $sScriptName = ($0 =~ /^.*\/(.+$)/) ? $1 : $0;
+   die <<HELP
+
+   Usage: $sScriptName [options] <matrix-file>
+    
+    Filters the rows of a matrix based on a set of thresholds.
+    Only those rows matching the filters will be retained.
+    
+    Options:
+    -above <number>
+      Include rows with values greater than this threshold
+    -eqa
+      Also include values equal to the 'above' threshold.
+    -below <number>
+      Include rows with values less than this threshold
+    -eqb
+      Also include values equal to the 'below' threshold.
+    -count <integer>
+      The minimal number of values in each row that must meet the thresholds,
+      to be included in the output.
+      default: $nRowCount
+    -data-row <integer>
+      The number of the first row with numeric data
+      default: $nFirstDataRow
+    -data-col <integer>
+      The number of the first column with numeric data
+      default: $nFirstDataCol
+    -help
+      This help message
+   
+HELP
+}
+
+
+###########
+## START ##
+###########
+
+# Check the input parameters
+if    ($nAbove eq 'NA' and $nBelow eq 'NA'){
+   die "Error: no thresholds were specified\n";
+}
+elsif ($nAbove ne 'NA' and $nBelow ne 'NA'){
+   die "Error: 'above' treshold need to be a numeric value\n" unless($nAbove =~ /^-*\d+\.*\d*$/);
+   die "Error: 'below' treshold need to be a numeric value\n" unless($nBelow =~ /^-*\d+\.*\d*$/);
+}
+elsif ($nAbove ne 'NA' and $nBelow eq 'NA'){
+   die "Error: 'above' treshold need to be a numeric value\n" unless($nAbove =~ /^-*\d+\.*\d*$/);
+}
+else{
+   die "Error: 'below' treshold need to be a numeric value\n" unless($nBelow =~ /^-*\d+\.*\d*$/);
+}
+die "Error: 'count' must be a positive integer\n" unless($nRowCount =~ /^\d+$/ and $nRowCount >= 0);
+die "Error: 'data-row' must be a positive integer\n"  unless($nFirstDataRow =~ /^[1-9]\d*$/);
+die "Error: 'data-col' must be a positive integer\n"  unless($nFirstDataCol =~ /^[1-9]\d*$/);
+$nFirstDataCol--; # Make the first data column zero-based
+
+
+# Filter the rows
+open IN, $sFile or die "Error: can't open '$sFile': $!\n";
+while (<IN>){
+   next if /^\s*$/;
+   if ($. < $nFirstDataRow){
+      print;
+   }
+   else{
+      s/[\n\r]$//g;
+      my @asLine = split /\t/;
+      my @asRowLabels = splice(@asLine, 0, $nFirstDataCol);
+      
+      # Count the number of values that meet the threshold
+      my $nThresholdCount = 0;
+      foreach my $nVal (@asLine){
+         if ($nVal =~ /^[-+]?[0-9]*\.?[0-9]*([eE][-+]?[0-9]+)?$/){
+            $nThresholdCount++ if (pass_threshold($nVal, $nAbove, $nBelow, $flEqA, $flEqB));
+         }
+         else{
+            die "Error: non-numeric value '$nVal' in data matrix on line $.\n";
+         }
+      }
+      
+      # Print lines meeting the threshold
+      print "$_\n" if ($nThresholdCount >= $nRowCount);
+   }
+}
+close IN;
+
+
+#################
+## SUBROUTINES ##
+#################
+
+
+# pass_threshold
+#
+# Returns 1 if the value passes the threshold or 0 if it doesn't
+sub pass_threshold{
+   my ($nVal, $nAbove, $nBelow, $flEqA, $flEqB) = @_;
+   my $flPass = 0;
+   if ($nAbove ne 'NA' and $nBelow eq 'NA'){
+      if ($flEqA) {
+         $flPass = 1 if ($nVal >= $nAbove);
+      }
+      else{
+         $flPass = 1 if ($nVal > $nAbove);
+      }
+   }
+   elsif ($nAbove eq 'NA' and $nBelow ne 'NA'){
+      if ($flEqB) {
+         $flPass = 1 if ($nVal <= $nBelow);
+      }
+      else{
+         $flPass = 1 if ($nVal < $nBelow);
+      }
+   }
+   else{
+      if ($nAbove <= $nBelow){
+         if ($flEqA and $flEqB){
+            $flPass = 1 if ( ($nVal >= $nAbove) and ($nVal <= $nBelow) );
+         }
+         elsif ($flEqA and !$flEqB){
+            $flPass = 1 if ( ($nVal >= $nAbove) and ($nVal < $nBelow) );
+         }
+         elsif (!$flEqA and $flEqB){
+            $flPass = 1 if ( ($nVal > $nAbove) and ($nVal <= $nBelow) );
+         }
+         else{
+            $flPass = 1 if ( ($nVal > $nAbove) and ($nVal < $nBelow) );
+         }
+      }
+      else{
+         if ($flEqA and $flEqB){
+            $flPass = 1 if ( ($nVal >= $nAbove) or ($nVal <= $nBelow) );
+         }
+         elsif ($flEqA and !$flEqB){
+            $flPass = 1 if ( ($nVal >= $nAbove) or ($nVal < $nBelow) );
+         }
+         elsif (!$flEqA and $flEqB){
+            $flPass = 1 if ( ($nVal > $nAbove) or ($nVal <= $nBelow) );
+         }
+         else{
+            $flPass = 1 if ( ($nVal > $nAbove) or ($nVal < $nBelow) );
+         }
+      }
+   }
+   return $flPass;
+}

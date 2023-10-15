@@ -1,0 +1,187 @@
+#!/usr/bin/env perl
+
+# join-by-ids is a wrapper around the unix 'join' utility that sorts the
+# files before doing the actual join. It takes the same arguments as 'join'
+
+# MODULES
+use strict;
+use warnings;
+use Getopt::Long;
+use File::Temp   qw(tempfile tempdir);
+
+# GLOBALS
+$ENV{JOIN}        ||= "join";     # Unix join binary
+$ENV{SORT}        ||= "sort";     # Unix sort binary
+$ENV{SORT_BUFFER} ||= "2G";       # Maximum size of the sort buffer
+$ENV{TMPDIR}      ||= '/tmp';     # Temp file dir
+$SIG{'INT'}=$SIG{'HUP'}=$SIG{'ABRT'}=$SIG{'QUIT'}=$SIG{'TRAP'}=$SIG{'STOP'}=\&INTERRUPT;
+
+# GET PARAMETERS
+my $sHelp        = 0;
+my $nUnpairFile  = 0;
+my $nSupressJoin = 0;
+my $sEmpty       = '';
+my $nIgnoreCase  = 0;
+my $nJointField  = 0;
+my $sSeparator   = "\t";
+my $sFormat      = '';
+my $nField1      = 1;
+my $nField2      = 1;
+GetOptions("help!"   => \$sHelp,
+           "a:i"     => \$nUnpairFile,
+           "e:s"     => \$sEmpty,
+           "i!"      => \$nIgnoreCase,
+           "j:i"     => \$nJointField,
+           "o:s"     => \$sFormat,
+           "t:s"     => \$sSeparator,
+           "v:n"     => \$nSupressJoin,
+           "1:n"     => \$nField1,
+           "2:n"     => \$nField2);
+
+
+# PRINT HELP
+$sHelp = 1 unless(@ARGV>1);
+if ($sHelp) {
+   my $sScriptName = ($0 =~ /^.*\/(.+$)/) ? $1 : $0;
+   print <<HELP;
+
+   Usage: $sScriptName [option] ... FILE1 FILE2
+
+   Combines two files (line by line) based on a shared identifier.
+   $sScriptName is a wrapper around the unix 'join' utility that sorts the
+   files before doing the actual join. It takes the same arguments as 'join'
+   Header lines must be preceeded by the comment char '#'
+
+  -a FILENUM        print unpairable lines coming from file FILENUM, where
+                      FILENUM is 1 or 2, corresponding to FILE1 or FILE2
+  -e EMPTY          replace missing input fields with EMPTY
+  -i, --ignore-case  ignore differences in case when comparing fields
+  -j FIELD          equivalent to '-1 FIELD -2 FIELD'
+  -o FORMAT         obey FORMAT while constructing output line
+  -t CHAR           use CHAR as input and output field separator
+  -v FILENUM        like -a FILENUM, but suppress joined output lines
+  -1 FIELD          join on this FIELD of file 1
+  -2 FIELD          join on this FIELD of file 2
+      --help     display this help and exit
+      
+HELP
+exit 0;
+}
+
+
+###########
+## START ##
+###########
+
+# Check file arguments
+my $sFile1 = $ARGV[$#ARGV - 1];
+my $sFile2 = $ARGV[$#ARGV];
+die "Error: file '$sFile1' does not exist\n" unless (-e $sFile1);
+die "Error: file '$sFile2' does not exist\n" unless (-e $sFile2);
+
+# Set fields to joint field if it's specified
+($nField1, $nField2) = ($nJointField, $nJointField) if ($nJointField);
+
+# Sort each file
+my @asHeader1;
+my @asHeader2;
+my $nSortCase = $nIgnoreCase ? '-f' : '';
+my $nSort1    = join('', $nField1, 'b,', $nField1);
+my $nSort2    = join('', $nField2, 'b,', $nField2);
+
+my $nNcolA = 0;
+my ($fhTmpA, $sTmpA) = tempfile('join-XXXXX', DIR=>$ENV{TMPDIR}, UNLINK => 1);
+open SORTA, "$ENV{SORT} -S $ENV{SORT_BUFFER} -t '$sSeparator' -k $nSort1 $nSortCase $ARGV[0] |" or die "Can't sort $ARGV[0]: $!\n";
+while(<SORTA>){ 
+   next if /^\s*$/;
+   s/[\n\r]+$//;
+   my @asLine = split /$sSeparator/, $_, -1;
+   if (/^\s*#/){
+      @asHeader1    = @asLine;
+   }
+   else{
+      if ($nNcolA){
+         die "Error: field count changes in file '$ARGV[0]' line $.\n" unless($nNcolA == scalar(@asLine));
+      }
+      else{
+         $nNcolA = scalar(@asLine);
+      }
+      print $fhTmpA $_, "\n";
+   }
+}
+$fhTmpA->close();
+
+my $nNcolB = 0;
+my ($fhTmpB, $sTmpB) = tempfile('join-XXXXX', DIR=>$ENV{TMPDIR}, UNLINK => 1);
+open SORTB, "$ENV{SORT} -S $ENV{SORT_BUFFER} -t '$sSeparator' -k $nSort2 $nSortCase $ARGV[1] |" or die "Can't sort $ARGV[1]: $!\n";
+while(<SORTB>){
+   next if /^\s*$/;
+   s/[\n\r]+$//;
+   my @asLine = split /$sSeparator/, $_, -1;
+   if (/^\s*#/){
+      @asHeader2    = @asLine;
+      splice @asHeader2, $nField2-1, 1 if($nField2<=@asHeader2); # remove join header
+   }
+   else{
+      if ($nNcolB){
+         die "Error: field count changes in file '$ARGV[1]' line $.\n" unless($nNcolB == scalar(@asLine));
+      }
+      else{
+         $nNcolB = scalar(@asLine);
+      }
+      print $fhTmpB $_, "\n";
+   }
+}
+$fhTmpB->close();
+
+# If one of the original files had a header, we'll put one in the output
+if (@asHeader1 or @asHeader2){
+   if (@asHeader1 < $nNcolA){
+      my $nRefSize = $nNcolA-scalar(@asHeader1);
+      for(my $i=1 ; $i<=$nRefSize ; $i++){push @asHeader1, ""}
+   }
+   if (@asHeader2 < $nNcolB-1){
+      my $nRefSize = $nNcolB-scalar(@asHeader2)-1;
+      for(my $i=1 ; $i<=$nRefSize ; $i++){push @asHeader2, ""}
+   }
+   my $nHeader1size = scalar(@asHeader1);
+   my $nHeader2size = scalar(@asHeader2);
+   my $nData1size = $nNcolA;
+   my $nData2size = $nNcolB-1;
+   die "Error: More header fields ($nHeader1size) than data columns ($nData1size) in file '$ARGV[0]'\n" unless($nHeader1size == $nData1size);
+   die "Error: More header fields ($nHeader2size) than data columns ($nData2size) in file '$ARGV[1]'\n" unless($nHeader2size == $nData2size);
+   print join($sSeparator, @asHeader1, @asHeader2), "\n";
+}
+
+# Now run join
+my $nNcolOut = $nNcolA + $nNcolB - 1;
+my $sJoinOptions  = " -1 $nField1 -2 $nField2 -t '$sSeparator'";
+$sJoinOptions    .= " -a $nUnpairFile"   if ($nUnpairFile);
+$sJoinOptions    .= " -v $nSupressJoin"  if ($nSupressJoin);
+$sJoinOptions    .= " -e $sEmpty"        if (length($sEmpty));
+$sJoinOptions    .= " -i"                if ($nIgnoreCase);
+$sJoinOptions    .= " -j $nJointField"   if ($nJointField);
+$sJoinOptions    .= " -o $sFormat"       if ($sFormat);
+open OUTPUT, "$ENV{JOIN} $sJoinOptions $sTmpA $sTmpB |" or die "Can't run join: $!\n";
+while (<OUTPUT>){
+   s/[\n\r]+$//;
+   my @asLine   = split /$sSeparator/, $_, -1;
+   my $sJoinID  = shift @asLine;
+   splice(@asLine,$nField1-1,0,$sJoinID);
+   my $nPadding = $nNcolOut - scalar(@asLine);
+   my $sPadding = $nPadding ? "$sSeparator$sEmpty" x $nPadding : "";
+   print join($sSeparator, @asLine), $sPadding, "\n";
+}
+close OUTPUT;
+
+
+#################
+## SUBROUTINES ##
+#################
+
+# INTERRUPT
+#
+# Interrupt routine, make sure we exit gracefully so that temporary files are cleaned up
+sub INTERRUPT{
+   exit(1); # This will call END
+}

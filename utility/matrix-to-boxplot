@@ -1,0 +1,99 @@
+#!/usr/bin/env perl
+
+# 29.12.2014 12:01:25 EDT
+# Harm van Bakel <hvbakel@gmail.com>
+
+# MODULES
+use strict;
+use warnings;
+use Getopt::Long;
+
+# GET PARAMETERS
+my $sHelp          = 0;
+my $nFirstDataRow  = 2;
+my $nFirstDataCol  = 2;
+GetOptions("help!"         => \$sHelp,
+           "data-row:s"    => \$nFirstDataRow,
+           "data-col:s"    => \$nFirstDataCol);
+my $sFile = shift @ARGV;
+
+
+# PRINT HELP
+$sHelp = 1 unless($sFile);
+if ($sHelp) {
+   my $sScriptName = ($0 =~ /^.*\/(.+$)/) ? $1 : $0;
+   die <<HELP
+
+   Usage: $sScriptName [options] <matrix-file>
+    
+    Converts the columns of a data matrix to a two-colum format
+    (value, label) that can be used to make R boxplots. Column
+    headers are used as data labels.
+    
+    Options:
+    -data-row <integer>
+      The number of the first row with numeric data
+      default: $nFirstDataRow
+    -data-col <integer>
+      The number of the first column with numeric data
+      default: $nFirstDataCol
+    -help
+      This help message
+   
+HELP
+}
+
+
+###########
+## START ##
+###########
+
+# Check the input parameters
+die "Error: 'data-row' must be a positive integer\n"  unless($nFirstDataRow =~ /^[1-9]\d*$/);
+die "Error: 'data-row' must be greater than one\n"  unless($nFirstDataRow >1);
+die "Error: 'data-col' must be a positive integer\n"  unless($nFirstDataCol =~ /^[1-9]\d*$/);
+$nFirstDataCol--; # Make the first data column zero-based
+
+
+# Filter the rows
+my ($nHeaderFields, $nDataFields) = (-1, -1);
+my @asHeader    = ();
+open IN, $sFile or die "Error: can't open '$sFile': $!\n";
+while (<IN>){
+   next if /^\s*$/;
+   s/[\n\r]$//g;
+   if ($. == $nFirstDataRow-1){
+      @asHeader      = split /\t/, $_, -1;
+      $nHeaderFields = scalar(@asHeader);
+   }
+   else{
+      my @asLine = split /\t/, $_, -1;
+      if ($nDataFields == -1){
+         $nDataFields = scalar(@asLine);
+         if ($nHeaderFields+1 == $nDataFields){
+            warn "Warning: Number of header fields is one less than number of data fields. Assuming R input file format.\n";
+            die "Error: missing header fields\n" unless ($nFirstDataCol > 1);
+         }
+         print "group\tvalue\n";
+      }
+      else{
+         die "Error: number of data fields changed on line $.: $!\n" unless(scalar(@asLine) == $nDataFields);
+      }
+      
+      # Transpose data
+      if ($nHeaderFields == $nDataFields){
+         for (my $i=$nFirstDataCol; $i<@asLine; $i++){
+            print join("\t", $asHeader[$i], $asLine[$i]), "\n";
+         }
+      }
+      elsif ($nHeaderFields+1 == $nDataFields){
+         for (my $i=$nFirstDataCol; $i<@asLine; $i++){
+            print join("\t", $asHeader[$i-1], $asLine[$i]), "\n";
+         }
+      }
+      else{
+         die "Error: mismatch between the number of header and data fields\n";
+      }
+   }
+}
+close IN;

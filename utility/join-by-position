@@ -1,0 +1,280 @@
+#!/usr/bin/env perl
+
+# Join two files by chromosome position
+
+use strict;
+use warnings;
+use Getopt::Long;
+use File::Temp   qw(tempfile tempdir);
+
+# GLOBALS
+$ENV{FJOIN}  ||= 'fjoin';   # Fjoin binary
+$ENV{TMPDIR} ||= '/tmp';    # Dir for temporary files
+$SIG{'INT'}=$SIG{'HUP'}=$SIG{'ABRT'}=$SIG{'QUIT'}=$SIG{'TRAP'}=$SIG{'STOP'}=\&INTERRUPT;
+
+# ARGUMENTS
+my $sHelp        = 0;
+my $sFile1       = '';
+my $sFile2       = '';
+my $sJoinCols1   = '1,2,3';
+my $sJoinCols2   = '1,2,3';
+my $sIDcols2     = '4';
+my $sFieldSep    = ';';
+my $sNoMatchChar = '';
+my $nOverlap     = 0;
+my $nKeepDups    = 0;
+GetOptions("help!"         => \$sHelp,
+           "1:s"           => \$sFile1,
+           "2:s"           => \$sFile2,
+           "joincols1:s"   => \$sJoinCols1,
+           "joincols2:s"   => \$sJoinCols2,
+           "idcols2:s"     => \$sIDcols2,
+           "fieldsep:s"    => \$sFieldSep,
+           "duplicates!"   => \$nKeepDups,
+           "overlap!"      => \$nOverlap,
+           "nomatchchar:s" => \$sNoMatchChar);
+           
+# PRINT HELP
+my $sScriptName = ($0 =~ /^.*\/(.+$)/) ? $1 : $0;
+$sHelp = 1 unless($sFile1 and $sFile2);
+if ($sHelp) {
+    die <<HELP
+
+    $sScriptName [ options ] -1 <source-file> -2 <join-file> 
+
+    Merge selected columns from the join file with the source file based on an overlap
+    in position. Multiple matches in the join file are merged together by -fieldsep
+    Header lines must be preceeded by the comment char '#'
+
+    Required:
+    -1 <string>
+      Tab-delimited source file for the join
+    -2 <string>
+      Tab-delimited join file, selected columns from this file will be merged with the source
+      file by genomic position
+    
+    Options:
+    -joincols1 <string>
+      A comma-separated list of the chromosome, start and end columns for the source file
+      default: $sJoinCols1
+    -joincols2 <string>
+      A comma-separated list of the chromosome, start and end columns for the join file
+      default: $sJoinCols2
+    -idcols2 <string>
+      A comma-separated list of columns in the join file to be merged with the source file
+      default: $sIDcols2
+    -fieldsep <string>
+      The separator used to merge multiple joined fields together
+      default: '$sFieldSep'
+    -duplicates
+      Keep duplicates when merging joined fields
+    -nomatchchar <string>
+      Indicate which placeholder character(s) to use for rows that have no position match
+      default: leave empty
+    -overlap
+      Include the size of the overlap in basepairs
+
+    -help
+      This help message
+      
+HELP
+}
+
+
+#########
+# START #
+#########
+
+# Check the input
+my @anJoinCols1 = &parse_columns($sJoinCols1);
+my @anJoinCols2 = &parse_columns($sJoinCols2);
+my @anIDcols2   = &parse_columns($sIDcols2);
+die "Error: invalid number of columns specified for '-joincols1'\n" unless (@anJoinCols1 == 3);
+die "Error: invalid number of columns specified for '-joincols2'\n" unless (@anJoinCols2 == 3);
+
+# Prepare the source file, extract chromosome, start, end and line-number identifier
+# skip header lines but include them in the line count
+my $sTmpFile1 = &prepare_file1($sFile1, \@anJoinCols1);
+
+
+# Prepare the join file, extract chromosome, start, end and the selected ID columns
+my ($sTmpFile2, $rJoinHeader) = &prepare_file2($sFile2, \@anJoinCols2, \@anIDcols2);
+
+# Run fjoin and parse the output into a hash as it comes out. Store each join column separately
+# by the column number that was specified with -idcols2
+my ($rLUTvalues, $rLUToverlaps) = &fjoin_to_hash($sTmpFile1, $sTmpFile2);
+
+# Finally, re-read file1 and merge in the joined columns based on the hash
+&print_output($sFile1, $rLUTvalues, $rLUToverlaps, scalar(@anIDcols2), $sFieldSep, $rJoinHeader, $nOverlap, $nKeepDups);
+
+
+
+###############
+# SUBROUTINES #
+###############
+
+# parse_columns
+#
+# Take a comma-separated list of columns and return an array of column ids (zero-based)
+sub parse_columns {
+   my $sColumns = shift @_;
+   my @anReturn;
+   
+   my @anColumns = split /,/, $sColumns;
+   for my $nCol (@anColumns){
+      unless ($nCol =~ /\d+/) {die "Error: non-numeric characters found in column specificiation\n";}
+      unless ($nCol > 0 )     {die "Error: column specifications must be numbers greater than 0\n";}
+      push @anReturn, $nCol-1;
+   }
+   return @anReturn;
+}
+
+# prepare_file1
+#
+# Prepare a temporary fjoin file with position columns and line IDs for file 1
+sub prepare_file1{
+   my ($sFile, $rJoinCols) = @_;
+   my ($fhTmp, $sTmp) = tempfile('file1-XXXXX', DIR=>$ENV{TMPDIR}, UNLINK=>1);
+   my $nCount = 0;
+   open IN, $sFile or die "Error: can't open $sFile: $!\n";
+   while (<IN>){
+      $nCount++;
+      next if /^\s*$/;
+      next if /^\s*#/;
+      s/[\n\r]+$//;
+      my @asFjoinCols = (split /\t/, $_, -1)[@$rJoinCols];
+      $asFjoinCols[0] = 'chr'.$asFjoinCols[0] unless($asFjoinCols[0] =~ /chr/);
+      $asFjoinCols[1] =~ s/[",]//g;
+      $asFjoinCols[2] =~ s/[",]//g;
+      die "Error: start position column in '$sFile' contains non-numeric values on line $nCount\n" unless ($asFjoinCols[1] =~ /^\d+$/);
+      die "Error: end position column in '$sFile' contains non-numeric values on line $nCount\n" unless ($asFjoinCols[2] =~ /^\d+$/);
+      die "Error: start position is greater than end position in '$sFile', line $nCount\n" unless ($asFjoinCols[1] <= $asFjoinCols[2]);
+      print $fhTmp join("\t", @asFjoinCols, $nCount), "\n";
+   }
+   close IN;
+   $fhTmp->close();
+   return ($sTmp);
+}
+
+# prepare_file2
+#
+# Prepare a temporary fjoin file with position columns and join fields for file 2
+sub prepare_file2{
+   my ($sFile, $rJoinCols, $rIDcols) = @_;
+   my @asHeader;
+   
+   my ($fhTmp, $sTmp) = tempfile('file2-XXXXX', DIR=>$ENV{TMPDIR}, UNLINK=>1);
+   my $nCount = 0;
+   open IN, $sFile or die "Error: can't open $sFile: $!\n";
+   while (<IN>){
+      $nCount++;
+      next if /^\s*$/;
+      s/[\n\r]+$//;
+      if (/^\s*#/){
+         @asHeader = (split /\t/, $_, -1)[@$rIDcols];
+      }
+      else{      
+         push my @anCombinedColIDs, @$rJoinCols ,@$rIDcols;
+         my @asFjoinCols = (split /\t/, $_, -1)[@anCombinedColIDs];
+         $asFjoinCols[0] = 'chr'.$asFjoinCols[0] unless($asFjoinCols[0] =~ /chr/);
+         $asFjoinCols[1] =~ s/[",]//g;
+         $asFjoinCols[2] =~ s/[",]//g;
+         die "Error: end position column in '$sFile' contains non-numeric values on line $nCount\n" unless ($asFjoinCols[2] =~ /^\d+$/);
+         die "Error: start position column in '$sFile' contains non-numeric values on line $nCount\n" unless ($asFjoinCols[1] =~ /^\d+$/);
+         die "Error: start position is greater than end position in '$sFile', line $nCount\n" unless ($asFjoinCols[1] <= $asFjoinCols[2]);
+         print $fhTmp join("\t", @asFjoinCols), "\n";
+      }
+   }
+   close IN;
+   $fhTmp->close();
+   return ($sTmp, \@asHeader);
+}
+
+
+# fjoin_to_hash
+#
+# Run fjoin and parse the output into a lookup table for merging
+# Hash key is the line number of file1, hash value is a hash of hashes with values
+sub fjoin_to_hash{
+   my ($sFile1, $sFile2) = @_;
+   my %hLUTvalues;
+   my %hLUToverlaps;
+
+   open FJOIN, "$ENV{FJOIN} -1 $sFile1 -2 $sFile2 --columns1=1,2,3 --columns2=1,2,3 -s both |" or die "Error: can't run fjoin: $!\n";
+   while (<FJOIN>){
+      s/[\n\r]+$//;
+      my @asLine        = split /\t/, $_, -1;
+      my $nKey          = $asLine[4];
+      my @asValues      = @asLine[(8 .. $#asLine)];
+      my $nOverlapStart = $asLine[2]>$asLine[6] ? $asLine[2] : $asLine[6];
+      my $nOverlapEnd   = $asLine[3]<$asLine[7] ? $asLine[3] : $asLine[7];
+      my $nOverlap      = $nOverlapEnd - $nOverlapStart + 1;
+      push @{$hLUToverlaps{$nKey}}, $nOverlap;
+      for (my $i=0; $i<@asValues ; $i++){
+         push @{$hLUTvalues{$nKey}{$i}}, $asValues[$i];
+      }
+   }
+   close FJOIN;
+   return (\%hLUTvalues, \%hLUToverlaps);
+}
+
+
+# print_output
+#
+# merge the join hash with file1 and print to STDOUT
+sub print_output{
+   my ($sFile1, $rLUTvalues, $rLUToverlaps, $nIDcolCount, $sFieldSep, $rJoinHeader, $nOverlap, $nKeepDups) = @_;
+   my $nJoinColCount = $nOverlap ? $nIDcolCount+1 : $nIDcolCount;
+   
+   my $nCount = 0;
+   open IN, $sFile1 or die "Can't open $sFile1: $!\n";
+   while (<IN>){
+      $nCount++;
+      next if /^\s*$/;
+      s/[\n\r]+$//;
+      if (/^\s*#/) {
+         unshift @$rJoinHeader, 'join-overlap' if ($nOverlap);
+         print "$_\t", join("\t", @$rJoinHeader), "\n";
+      }
+      else{
+         if (exists($rLUTvalues->{$nCount})){
+            my @asJoinCols;
+            push @asJoinCols, join($sFieldSep, @{$rLUToverlaps->{$nCount}}) if ($nOverlap);
+            for (my $i=0 ; $i< $nIDcolCount ; $i++){
+               if ($nKeepDups){
+                  push @asJoinCols, join($sFieldSep, @{$rLUTvalues->{$nCount}{$i}});
+               }
+               else{
+                  push @asJoinCols, join($sFieldSep, unique(@{$rLUTvalues->{$nCount}{$i}}));
+               }
+            }
+            print "$_\t", join("\t", @asJoinCols), "\n";
+         }
+         else{
+            print $_, "\t$sNoMatchChar" x $nJoinColCount, "\n";
+         }
+      }
+   }
+}
+
+
+# unique
+#
+# Returns unique entries in an array
+sub unique {
+   my %hUnique;
+   @hUnique{@_} = ();
+   my @aOut = sort(keys(%hUnique));
+   return(@aOut)
+}
+
+
+# INTERRUPT
+#
+# Interrupt routine, make sure we exit gracefully
+sub INTERRUPT{
+   exit(1); # This will call END
+}
+
+
+

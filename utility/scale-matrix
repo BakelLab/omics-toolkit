@@ -1,0 +1,86 @@
+#!/usr/bin/env perl
+
+# 12.12.2012 09:22:04 EST
+# Harm van Bakel <hvbakel@gmail.com>
+
+# MODULES
+use strict;
+use warnings;
+use Getopt::Long;
+use Scalar::Util qw/ looks_like_number /;
+
+# GET PARAMETERS
+my $sHelp        = 0;
+my $nFirstDataRow  = 2;
+my $nFirstDataCol  = 2;
+my $nScale         = 1;
+GetOptions("help!"      => \$sHelp,
+           "scale:f"    => \$nScale,
+           "data-row:s" => \$nFirstDataRow,
+           "data-col:s" => \$nFirstDataCol);
+my $sFile = shift @ARGV;
+
+# PRINT HELP
+$sHelp = 1 unless($sFile);
+if ($sHelp) {
+   my $sScriptName = ($0 =~ /^.*\/(.+$)/) ? $1 : $0;
+   die <<HELP
+
+   Usage: $sScriptName [options] <matrix-file>
+   
+   Adjust the values of a tab-delimited data matrix by multiplying 
+   with a scaling factor.
+   
+   Options:
+    -scale <numeric>
+      The factor to multiply each data value with.
+      default: $nScale
+    -data-row <integer>
+      The number of the first row with numeric data
+      default: $nFirstDataRow
+    -data-col <integer>
+      The number of the first column with numeric data
+      default: $nFirstDataCol
+    -help
+      This help message
+
+HELP
+}
+
+
+##########
+## MAIN ##
+##########
+
+# Check input
+die "Error: 'scale' must be a number\n"  unless($nScale =~ /^[+-]?\d+\.?\d*$/);
+die "Error: 'data-row' must be a positive integer\n"  unless($nFirstDataRow =~ /^[1-9]\d*$/);
+die "Error: 'data-col' must be a positive integer\n"  unless($nFirstDataCol =~ /^[1-9]\d*$/);
+$nFirstDataCol--; # Make the first data column zero-based
+
+# Scale the matrix
+open IN, $sFile or die "Error: can't open '$sFile': $!\n";
+while (<IN>){
+   next if /^\s*$/;
+   if ($. < $nFirstDataRow){
+      print;
+   }
+   else{
+      s/[\n\r]$//g;
+      my @asLine = split /\t/;
+      my @asRowLabels = splice(@asLine, 0, $nFirstDataCol);
+      
+      # Count the number of values that meet the threshold
+      print join("\t", @asRowLabels);
+      foreach my $nValue (@asLine){
+         if (looks_like_number($nValue)){
+            print "\t", $nValue * $nScale;
+         }
+         else{
+            die "Error: '$nValue' is not a number on line $.\n";
+         }
+      }
+      print "\n";
+   }
+}
+close IN;

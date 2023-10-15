@@ -1,0 +1,61 @@
+#!/usr/bin/env perl
+
+# 14.06.2011 12:24:45 EDT
+# Harm van Bakel <hvbakel@gmail.com>
+
+# MODULES
+use strict;
+use warnings;
+use Getopt::Long;
+
+# GET PARAMETERS
+my $sHelp        = 0;
+my $sFieldSep    = "\t";
+GetOptions("help!"   => \$sHelp);
+
+# PRINT HELP
+$sHelp = 1 unless(@ARGV>0);
+if ($sHelp) {
+   my $sScriptName = ($0 =~ /^.*\/(.+$)/) ? $1 : $0;
+   die <<HELP
+
+   Usage: $sScriptName <file>
+   
+    Transposes a text file
+    
+    -fs <string>
+      Field separator. Default: <tab>
+    -help
+      This help message
+   
+HELP
+}
+
+
+##########
+## MAIN ##
+##########
+
+# Read in the matrix
+my $nMaxCol = 0;
+my $nMaxRow = 0;
+my @aTranspose;
+open IN, $ARGV[0] or die "Error: can't open '$ARGV[0]': $!\n";
+while (<IN>){
+   next if (/^\s*$/);
+   s/[\n\r]+$//;
+   my @asLine  = split(/$sFieldSep/,$_, -1);
+   $aTranspose[$nMaxRow] = [@asLine];
+   $nMaxCol = scalar(@asLine) if (scalar(@asLine) > $nMaxCol);
+   $nMaxRow++;
+}
+close IN;
+
+# Now transpose the matrix
+for (my $col=0 ; $col<$nMaxCol ; $col++){
+   for (my $row=0 ; $row<$nMaxRow ; $row++){
+      print "\t" if ($row);
+      print $aTranspose[$row][$col] if (scalar(@{$aTranspose[$row]}) > $col);
+   }
+   print "\n";
+}

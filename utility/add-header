@@ -1,0 +1,36 @@
+#!/usr/bin/env perl
+
+use strict;
+use warnings;
+use Getopt::Long;
+use Tie::File;
+
+# ARGUMENTS
+my $sHelp       = 0;
+my $sSeparator  = "\t";
+GetOptions("help!"        => \$sHelp,
+           "separator:s"  => \$sSeparator);
+my $sFile       = shift @ARGV;
+
+# PRINT HELP
+$sHelp = 1 unless(@ARGV);
+if ($sHelp) {
+    my $sScriptName = ($0 =~ /^.*\/(.+$)/) ? $1 : $0;
+    die <<HELP
+
+    $sScriptName [ -s <separator> ] <file> <header-field1> .. <header-fieldN>
+      
+    Adds a header to any text file. The default separator for the header fields 
+    is a tab. Use -s to specify other separators.
+    
+HELP
+}
+
+#########
+# START #
+#########
+
+my $sHeader = join($sSeparator, @ARGV) . "\n";
+tie my @asLines, 'Tie::File', $sFile or die "Can't open '$sFile': $!\n";
+unshift @asLines, $sHeader;
+untie @asLines;

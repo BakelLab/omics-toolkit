@@ -1,0 +1,45 @@
+#!/usr/bin/env perl
+
+# 13.11.2011 11:27:19 EST
+# Harm van Bakel <hvbakel@gmail.com>
+
+# MODULES
+use strict;
+use warnings;
+use Getopt::Long;
+use File::Basename;
+
+# GET PARAMETERS
+my $sHelp        = 0;
+my $nDpi         = 96;
+GetOptions("help!"   => \$sHelp,
+           "dpi:i"   => \$nDpi);
+
+# PRINT HELP
+$sHelp = 1 unless(@ARGV);
+if ($sHelp) {
+   my $sScriptName = ($0 =~ /^.*\/(.+$)/) ? $1 : $0;
+   die <<HELP
+
+   Usage: $sScriptName <in.pdf> [out.pdf]
+   
+   Arguments
+    -dpi <integer>
+      Target resolution of downsampled images.
+      Default: $nDpi 
+    -help
+      This help message
+   
+HELP
+}
+
+
+##########
+## MAIN ##
+##########
+
+my $sInput  = shift @ARGV;
+my $sOutput = @ARGV ? shift @ARGV : join('', (fileparse($sInput, qr/\.[^.]*/))[0], "_small.pdf");
+system("gs -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dColorImageResolution=$nDpi -dColorImageDownsampleType=/Average -dGrayImageDownsampleType=/Average -dGrayImageResolution=$nDpi -dMonoImageResolution=$nDpi -dMonoImageDownsampleType=/Average -dOptimize=true -dDownsampleColorImages=true -dDownsampleGrayImages=true -dDownsampleMonoImages=true -dUseCIEColor -dColorConversionStrategy=/sRGB -dNOPAUSE -dQUIET -dBATCH -sOutputFile=$sOutput $sInput") == 0
+   or die "Error: could not convert file: $?\n";
+

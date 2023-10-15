@@ -1,0 +1,14 @@
+#!/bin/sh
+
+# Simple wrapper to display tab-delimited files as fixed-width
+if [ $# -eq 0 ]
+   then
+      column -s '	' -t -n | less -S
+   else
+      if [ -e $1 ]
+      then
+         column -s '	' -t -n $1 | less -S
+      else
+         echo "Error: file '$1' does not exist"
+      fi
+fi

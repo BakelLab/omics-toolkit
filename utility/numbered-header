@@ -1,0 +1,130 @@
+#!/usr/bin/env perl
+
+# 08.08.2009 15:16:54 EDT
+# Harm van Bakel <hvbakel@gmail.com>
+
+# MODULES
+use strict;
+use warnings;
+use Getopt::Long;
+
+# GET PARAMETERS
+my $sHelp        = 0;
+my $sSeparator   = "\t";
+my $nLines       = 1;
+my $nBase        = 1;
+GetOptions("help!"    => \$sHelp,
+           "sep:s"    => \$sSeparator,
+           "lines:n" => \$nLines,
+           "base:s"   => \$nBase);
+
+# PRINT HELP
+$sHelp = 1 unless(@ARGV);
+if ($sHelp) {
+   my $sScriptName = ($0 =~ /^.*\/(.+$)/) ? $1 : $0;
+   die <<HELP
+
+   Usage: $sScriptName [-s -b] <file1> .. <fileN>
+   
+   Get listing of header fields with column numbers. Utility script to 
+   easily identify the column numbers to process with awk etc.
+    
+    -s <string>
+      Separator, default: tab
+    -l <integer>
+      Number of header lines to display. Default: $nLines
+    -b <integer>
+      Base number for column count. Default: $nBase
+    -help
+      This help message
+   
+HELP
+}
+
+
+###########
+## START ##
+###########
+
+# Check arguments
+die "Error: base number for column count must be discrete\n" unless ($nBase =~ /^\d+$/);
+
+foreach my $sInput (@ARGV){
+   # Parse header lines and push them onto an array
+   open IN, $sInput or die "Error: can't open '$sInput': $!\n";
+   my @asHeaders;
+   my $nHeaderLength = 0;
+   while (<IN>){   
+      if ($. <= $nLines){
+         next if (/^\s*$/);
+         s/[\n\r]+$//;
+         my @asLine = split /$sSeparator/, $_, -1;
+         push @asHeaders, [@asLine];
+         $nHeaderLength = @asLine if (@asLine > $nHeaderLength);
+      }
+      else{
+         last;
+      }
+   }
+   close IN;
+   
+   # Pad the header matrix with empty fields to make sure each row has an 
+   # equal number of fields
+   pad_matrix(\@asHeaders, $nHeaderLength);
+   
+   # Now transpose the header matrix
+   my @asTransposedHeaders = map { my $x = $_;
+                                   [ map { $asHeaders[$_][$x] } 0 .. $#asHeaders ];
+                                 } 0 .. $#{$asHeaders[0]};
+   
+   
+   # Print the numbered header lines
+   if (@ARGV>1){
+      print "\n$sInput\n";
+      print "-" x length($sInput), "\n";
+   }
+   my (@anColumnWidths)  = max_col_element_length(@asTransposedHeaders);
+   my $nCount = $nBase;
+   foreach my $rRow (@asTransposedHeaders){
+      for (my $i=0 ; $i<@$rRow ; $i++){
+         printf("%-$anColumnWidths[$i]s  ", $rRow->[$i]);
+      }
+      print "  ", $nCount++, "\n";
+   }
+}
+
+
+###############
+# SUBROUTINES #
+###############
+
+# pad_matrix
+#
+# Pads an array of arrays with empty fields to the specified row length
+sub pad_matrix {
+   my ($rMatrix, $nCount) = @_;
+   foreach my $rRow (@$rMatrix){
+      my $nPadCount = $nCount - @$rRow;
+      for (my $i=1 ; $i<=$nPadCount ; $i++){
+         push @$rRow, "";
+      } 
+   }
+}
+
+# max_col_element_length(@array)
+#
+# Returns string length of largest element for the columns of an array of arrays
+sub max_col_element_length {
+   my @anMaxLengths;
+   foreach my $rRow (@_){
+      for(my $i=0 ; $i < @$rRow ; $i++){
+         if (defined($anMaxLengths[$i])){
+            $anMaxLengths[$i] = length($rRow->[$i]) if (length($rRow->[$i]) > $anMaxLengths[$i]);
+         }
+         else {
+            $anMaxLengths[$i] = length($rRow->[$i]);
+         }
+      }
+   }
+   return @anMaxLengths;
+}

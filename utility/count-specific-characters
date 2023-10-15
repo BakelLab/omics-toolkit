@@ -1,0 +1,52 @@
+#!/usr/bin/env perl
+
+# 30.09.2011 14:45:59 EDT
+# Harm van Bakel <hvbakel@gmail.com>
+
+# MODULES
+use strict;
+use warnings;
+use Getopt::Long;
+
+# GET PARAMETERS
+my $sHelp        = 0;
+GetOptions("help!"   => \$sHelp);
+my $sInput = shift @ARGV;
+my $sChars = join("", @ARGV);
+
+# PRINT HELP
+$sHelp = 1 unless($sInput and $sChars);
+if ($sHelp) {
+   my $sScriptName = ($0 =~ /^.*\/(.+$)/) ? $1 : $0;
+   die <<HELP
+
+   Usage: $sScriptName <file> <characters>
+   
+   Script to count the occurrences of specific character(s)
+   in a file.
+    
+    -help
+      This help message
+   
+HELP
+}
+
+
+##########
+## MAIN ##
+##########
+
+# Collapse into unique characters
+my @asChars = split //, $sChars;
+my %hChars;
+foreach my $char (@asChars){ $hChars{$char}++;}
+$sChars = join('', keys %hChars);
+
+my $nCount = 0;
+open IN, $sInput or die "Error: can't open '$sInput': $!\n";
+warn("Counting characters '$sChars' in file '$sInput'\n");
+while (<IN>){
+   $nCount += $_ =~ s/[$sChars]//g;
+}
+close IN;
+print "$nCount\n";

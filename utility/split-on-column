@@ -1,0 +1,101 @@
+#!/usr/bin/env perl
+
+# Splits a file according to the values in a specified column
+
+use strict;
+use warnings;
+use FileHandle;
+use Getopt::Long;
+
+# GET PARAMETERS
+my $sHelp       = 0;
+my $nSplitCol   = 1;
+my $sSeparator  = "\t";
+my $nMaxFiles   = 100;
+my $sPrefix     = "";
+my $sAppend     = "";
+GetOptions("help!"  => \$sHelp,
+           "t:s"    => \$sSeparator,
+           "c:i"    => \$nSplitCol,
+           "m:i"    => \$nMaxFiles,
+           "a:s"    => \$sAppend,
+           "p:s"    => \$sPrefix);
+
+
+# PRINT HELP
+$sHelp = 1 unless(@ARGV);
+if ($sHelp) {
+    my $sScriptName = ($0 =~ /^.*\/(.+$)/) ? $1 : $0;
+    die <<HELP
+
+    $sScriptName [options] File1 ... FileN
+
+    Splits one or more files according to the identifiers in a specified 
+    column. One file is created for each unique identifier. For example,
+    this script can be used to split a file with genome annotations into
+    one file per chromosome.
+
+    Arguments:
+    -c <integer>
+      Column to split the file on
+      default: $nSplitCol
+    -t <string>
+      Field separator. Default: tab
+    -m <integer>
+      Maximum number of files to create, used as safety catch to avoid
+      an excessive number of files in case a wrong column is selected
+      default: $nMaxFiles
+    -p <string>
+      Optional prefix to the output filenames
+    -a <string>
+      Optional postfix to the output filenames
+    
+    -help
+      This help message
+      
+HELP
+}
+
+# Check arguments
+my @asErrors;
+push @asErrors, "Error: maximum number of files must be a positive integer\n" unless ($nMaxFiles =~ /^[1-9]\d*$/);
+push @asErrors, "Error: split column must be a positive integer\n"            unless ($nSplitCol =~ /^[1-9]\d*$/);
+push @asErrors, "Error: no column separator specified"                        unless ($sSeparator);
+die join("\n", @asErrors), "\n" if (@asErrors);
+$nSplitCol--; # Make splitcolumn zero-based
+
+my %hFileHandles;
+my $nFileHandleCount;
+foreach my $sFile (@ARGV){
+   open IN, $sFile or die "Can't open $sFile: $!\n";
+   while (<IN>){
+      next if /^\s*$/;
+      next if /^\s*#/;
+      next if /^\s*[Tt]rack/;
+      s/[\n\r]$//;
+      my (@asLine) = split /$sSeparator/, $_, -1;
+      die "Error: Line $. in file '$sFile' has less than $nSplitCol fields\n" unless ($nSplitCol <= $#asLine);
+      my $sSplitValue = $asLine[$nSplitCol];
+      $sSplitValue =~ s/['"(){}\/\\]//g;
+      $sSplitValue =~ s/ /_/g;
+      warn "Warning: empty split value for line $. in file '$sFile', line skipped\n" unless ($sSplitValue);
+      unless (exists($hFileHandles{$sSplitValue})){
+         if ($nFileHandleCount++ <= $nMaxFiles ){
+            my $sFileName = $sAppend ? join('', $sSplitValue, $sAppend) : $sSplitValue;
+            $sFileName = $sPrefix ? join('', $sPrefix, $sFileName) : $sFileName;
+            $hFileHandles{$sSplitValue} = new FileHandle;
+            $hFileHandles{$sSplitValue}->open(">$sFileName") or die "Can't open $sFileName: $!\n";
+         }
+         else{
+            die "Error: exceeded maximum number of allowed output files\n";
+         }
+      }
+      $hFileHandles{$sSplitValue}->print($_."\n");
+   }
+   close IN;
+}
+
+# Close all filehandles
+foreach my $sSplitValue (keys(%hFileHandles)){
+   $hFileHandles{$sSplitValue}->close();
+}

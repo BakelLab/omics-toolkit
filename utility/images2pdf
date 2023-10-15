@@ -1,0 +1,65 @@
+#!/usr/bin/env perl
+
+# 18.11.2011 10:38:54 EST
+# Harm van Bakel <hvbakel@gmail.com>
+
+# GLOBALS
+$ENV{TMPDIR} ||= "/tmp";
+
+# MODULES
+use strict;
+use warnings;
+use Getopt::Long;
+
+# GET PARAMETERS
+my $sHelp        = 0;
+my $flContrast   = 0;
+my $sOut         = '';
+GetOptions("help!"     => \$sHelp,
+           "contrast!" => \$flContrast,
+           "out:s"     => \$sOut);
+
+# PRINT HELP
+$sHelp = 1 unless(@ARGV>0 and $sOut);
+if ($sHelp) {
+   my $sScriptName = ($0 =~ /^.*\/(.+$)/) ? $1 : $0;
+   die <<HELP
+
+   Usage: $sScriptName -out <file.pdf> image1 .. imageN
+   
+   Convert a set of images to a pdf file that has one page
+   per image. There's also an option to improve the image
+   contrast.
+   
+   Arguments:
+    -out <string>
+      Name of the output pdf file (required)
+    -contrast
+      Improve image contrast, e.g. to remove the gray
+      background for scanned images.
+    -help
+      This help message
+   
+HELP
+}
+
+
+##########
+## MAIN ##
+##########
+
+# Check output file
+die "Error: output file must end in '.pdf'\n" unless($sOut =~ /\.pdf$/);
+
+# Adjust contrast
+my @asTmpImages;
+if ($flContrast){
+   foreach my $sImage (@ARGV){
+      system("convert $sImage -level 20%,90% $ENV{TMPDIR}/temp_${sImage}.jpg") == 0 or die "Error: could not adjust image contrast (is ImageMagick installed?): $?\n";
+      push @asTmpImages, "$ENV{TMPDIR}/temp_${sImage}.jpg";
+   }
+}
+
+# Convert to PDF
+my $sImages = @asTmpImages ? join(' ', @asTmpImages) : join(' ', @ARGV);
+system("convert $sImages $sOut") == 0 or die "Error: could not create pdf (is ImageMagick installed?): $?\n";

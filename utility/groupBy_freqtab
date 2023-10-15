@@ -1,0 +1,94 @@
+#!/usr/bin/env perl
+
+# 15.09.2011 10:45:55 EDT
+# Harm van Bakel <hvbakel@gmail.com>
+
+# MODULES
+use strict;
+use warnings;
+use Getopt::Long;
+
+# GET PARAMETERS
+my $sHelp        = 0;
+GetOptions("help!"   => \$sHelp);
+my $sInput = shift @ARGV;
+
+# PRINT HELP
+$sHelp = 1 unless($sInput);
+if ($sHelp) {
+   my $sScriptName = ($0 =~ /^.*\/(.+$)/) ? $1 : $0;
+   die <<HELP
+
+   Addon for the groupBy utility that converts the freqdesc or freqasc
+   output to a tabular format that is easier to interpret.
+
+   Usage: $sScriptName <groupBy output>
+    
+    -help
+      This help message
+   
+HELP
+}
+
+
+##########
+## MAIN ##
+##########
+
+my $nOrder       = 1;
+my $nKeyColCount = 0;
+my %hCategories;
+my %hData;
+open INPUT, $sInput or die "Error: can't open '$sInput': $!\n";
+while (<INPUT>){
+   next if (/^\s*$/);
+   next if (/^ *#/);
+   s/[\n\r]+$//;
+   my (@asLine) = split /\t/, $_, -1;
+   my $sFreqs   = pop(@asLine);
+   
+   # Keep the column count so that we can insert header lines later
+   if ($nKeyColCount){
+      die "Error: column count changes on line $.\n" unless($nKeyColCount == scalar(@asLine));
+   }
+   else{
+      $nKeyColCount = scalar(@asLine);
+   }
+   
+   # Make the key field and add it to a hash to remember the order
+   my $sKey = join("\t", @asLine);
+   $hData{$sKey}{order} ||= $nOrder++;
+   
+   # Parse frequencies
+   my (@asFreqs) = split(',', $sFreqs);
+   foreach my $sFreqPair (@asFreqs){
+      my (@asFreqPair) = split ':', $sFreqPair;
+      die "Error: uneven number of frequency counts on line ${.}. Make sure the groupBy 'grp' column does not contain any ',' or ':' characters!\n" unless(@asFreqPair == 2);
+      my ($sFreqKey, $nFreqVal) = @asFreqPair;
+      die "Error: frequency value for category '$sFreqKey' on line $. is not numeric\n" unless($nFreqVal =~ /^\d+$/);
+      $hCategories{$sFreqKey}++;
+      $hData{$sKey}{categories}{$sFreqKey} += $nFreqVal;
+   }
+}
+close INPUT;
+
+# Print the output header
+my @asCategories = sort(keys %hCategories);
+print "\t" x $nKeyColCount, join("\t", @asCategories), "\n";
+
+# Print the matrix
+foreach my $sKey (sort {$hData{$a}{order} <=> $hData{$b}{order}} keys(%hData)){
+   print $sKey;
+   foreach my $sFreqKey (@asCategories){
+      if (exists $hData{$sKey}{categories}{$sFreqKey}){
+         print "\t$hData{$sKey}{categories}{$sFreqKey}"
+      }
+      else{
+         print "\t0"
+      }
+   }
+   print "\n";
+}
+
+
+

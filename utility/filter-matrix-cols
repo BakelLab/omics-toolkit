@@ -1,0 +1,221 @@
+#!/usr/bin/env perl
+
+# 19.09.2009 12:01:25 EDT
+# Harm van Bakel <hvbakel@gmail.com>
+
+# GLOBALS
+$ENV{TMPDIR} ||= "/tmp";     # location for tmp file storage
+$SIG{'INT'}=$SIG{'HUP'}=$SIG{'ABRT'}=$SIG{'QUIT'}=$SIG{'TRAP'}=$SIG{'STOP'}=\&INTERRUPT;
+
+# MODULES
+use strict;
+use warnings;
+use Getopt::Long;
+use File::Temp qw(tempfile tempdir);
+
+# GET PARAMETERS
+my $sHelp          = 0;
+my $nAbove         = 'NA';
+my $nBelow         = 'NA';
+my $flEqA          = 0;
+my $flEqB          = 0;
+my $nColCount      = 1;
+my $nFirstDataRow  = 2;
+my $nFirstDataCol  = 2;
+GetOptions("help!"         => \$sHelp,
+           "above:f"       => \$nAbove,
+           "below:f"       => \$nBelow,
+           "eqa!"          => \$flEqA,
+           "eqb!"          => \$flEqB,
+           "data-row:s"    => \$nFirstDataRow,
+           "data-col:s"    => \$nFirstDataCol,
+           "count:s"       => \$nColCount);
+my $sFile = shift @ARGV;
+
+
+# PRINT HELP
+$sHelp = 1 unless($sFile);
+if ($sHelp) {
+   my $sScriptName = ($0 =~ /^.*\/(.+$)/) ? $1 : $0;
+   die <<HELP
+
+   Usage: $sScriptName [options] <matrix-file>
+    
+    Filters the columns of a matrix based on a set of thresholds.
+    Only those colums matching the filters will be retained.
+    
+    Options:
+    -above <number>
+      Include columns with values greater or equal to this threshold
+    -eqa
+      Also include values equal to the 'above' threshold.
+    -below <number>
+      Include columns with values less or equal to this threshold
+    -eqb
+      Also include values equal to the 'below' threshold.
+    -count <integer>
+      The minimal number of values in each column that must meet the thresholds,
+      to be included in the output.
+      default: $nColCount
+    -data-row <integer>
+      The number of the first row with numeric data
+      default: $nFirstDataRow
+    -data-col <integer>
+      The number of the first column with numeric data
+      default: $nFirstDataCol
+    -help
+      This help message
+   
+HELP
+}
+
+
+###########
+## START ##
+###########
+
+# Check the input parameters
+if    ($nAbove eq 'NA' and $nBelow eq 'NA'){
+   die "Error: no thresholds were specified\n";
+}
+elsif ($nAbove ne 'NA' and $nBelow ne 'NA'){
+   die "Error: 'above' treshold need to be a numeric value\n" unless($nAbove =~ /^-*\d+\.*\d*$/);
+   die "Error: 'below' treshold need to be a numeric value\n" unless($nBelow =~ /^-*\d+\.*\d*$/);
+}
+elsif ($nAbove ne 'NA' and $nBelow eq 'NA'){
+   die "Error: 'above' treshold need to be a numeric value\n" unless($nAbove =~ /^-*\d+\.*\d*$/);
+}
+else{
+   die "Error: 'below' treshold need to be a numeric value\n" unless($nBelow =~ /^-*\d+\.*\d*$/);
+}
+die "Error: 'count' must be a positive integer\n" unless($nColCount =~ /^\d+$/ and $nColCount >= 0);
+die "Error: 'data-row' must be a positive integer\n"  unless($nFirstDataRow =~ /^[1-9]\d*$/);
+die "Error: 'data-col' must be a positive integer\n"  unless($nFirstDataCol =~ /^[1-9]\d*$/);
+$nFirstDataCol--; # Make the first data column zero-based
+
+
+# Count how many value meet the thresholds in each column
+# Also save a temporary copy of the file for re-reading. This is needed in case data is passed from STDIN!
+my @asHeaderRows;
+my %hColAboveThresholdCount;
+my ($fhTmp, $sTmp) = tempfile('tempfile-XXXXX', DIR=>$ENV{TMPDIR}, UNLINK=>1);
+open IN, $sFile or die "Error: can't open '$sFile': $!\n";
+while (<IN>){
+   next if /^\s*$/;
+   print $fhTmp $_;
+   s/[\n\r]+$//;
+   my @asLine = split /\t/;
+   if ($. < $nFirstDataRow){
+      push @asHeaderRows, [@asLine];
+   }
+   else{
+      my @asRowLabels = splice(@asLine, 0, $nFirstDataCol);
+      
+      # Get IDs of columns that meet the threshold
+      my @anThresholdIDs;
+      for (my $i=0 ; $i<@asLine ; $i++){
+         if ($asLine[$i] =~ /^[-+]?[0-9]*\.?[0-9]*([eE][-+]?[0-9]+)?$/){
+            $hColAboveThresholdCount{$i}++ if (pass_threshold($asLine[$i], $nAbove, $nBelow, $flEqA, $flEqB));
+         }
+         else{
+            die "Error: non-numeric value '$asLine[$i]' in data matrix on line $.\n";
+         }
+      }
+   }
+}
+close IN;
+close $fhTmp;
+
+# Figure out which column IDs meet the threshold
+my @anFilteredColumnIDs;
+foreach my $sID (sort {$a <=> $b} keys(%hColAboveThresholdCount)){
+   push @anFilteredColumnIDs, $sID if ($hColAboveThresholdCount{$sID}>=$nColCount);
+}
+
+# Print the header for the columns that were retained
+foreach my $rHeaderRow (@asHeaderRows){
+   my @asLine      = @$rHeaderRow;
+   my @asRowLabels = splice(@asLine, 0, $nFirstDataCol);
+   print join("\t", @asRowLabels, @asLine[@anFilteredColumnIDs]), "\n";
+}
+
+# Now open the file again and print only those columns meeting the threshold
+open IN, $sTmp or die "Error: can't open '$sFile': $!\n";
+while (<IN>){
+   if ($. >= $nFirstDataRow){
+      s/[\n\r]+$//;
+      my @asLine      = split /\t/;
+      my @asRowLabels = splice(@asLine, 0, $nFirstDataCol);
+      @asLine         = @asLine[@anFilteredColumnIDs];
+      print join("\t", @asRowLabels, @asLine), "\n";
+   }
+}
+close IN;
+
+
+#################
+## SUBROUTINES ##
+#################
+
+# pass_threshold
+#
+# Returns 1 if the value passes the threshold or 0 if it doesn't
+sub pass_threshold{
+   my ($nVal, $nAbove, $nBelow, $flEqA, $flEqB) = @_;
+   my $flPass = 0;
+   if ($nAbove ne 'NA' and $nBelow eq 'NA'){
+      if ($flEqA) {
+         $flPass = 1 if ($nVal >= $nAbove);
+      }
+      else{
+         $flPass = 1 if ($nVal > $nAbove);
+      }
+   }
+   elsif ($nAbove eq 'NA' and $nBelow ne 'NA'){
+      if ($flEqB) {
+         $flPass = 1 if ($nVal <= $nBelow);
+      }
+      else{
+         $flPass = 1 if ($nVal < $nBelow);
+      }
+   }
+   else{
+      if ($nAbove <= $nBelow){
+         if ($flEqA and $flEqB){
+            $flPass = 1 if ( ($nVal >= $nAbove) and ($nVal <= $nBelow) );
+         }
+         elsif ($flEqA and !$flEqB){
+            $flPass = 1 if ( ($nVal >= $nAbove) and ($nVal < $nBelow) );
+         }
+         elsif (!$flEqA and $flEqB){
+            $flPass = 1 if ( ($nVal > $nAbove) and ($nVal <= $nBelow) );
+         }
+         else{
+            $flPass = 1 if ( ($nVal > $nAbove) and ($nVal < $nBelow) );
+         }
+      }
+      else{
+         if ($flEqA and $flEqB){
+            $flPass = 1 if ( ($nVal >= $nAbove) or ($nVal <= $nBelow) );
+         }
+         elsif ($flEqA and !$flEqB){
+            $flPass = 1 if ( ($nVal >= $nAbove) or ($nVal < $nBelow) );
+         }
+         elsif (!$flEqA and $flEqB){
+            $flPass = 1 if ( ($nVal > $nAbove) or ($nVal <= $nBelow) );
+         }
+         else{
+            $flPass = 1 if ( ($nVal > $nAbove) or ($nVal < $nBelow) );
+         }
+      }
+   }
+   return $flPass;
+}
+
+
+# INTERRUPT
+#
+# Interrupt routine, make sure we exit gracefully for tmp file cleanup
+sub INTERRUPT{
+   exit(1); # This will call END
+}

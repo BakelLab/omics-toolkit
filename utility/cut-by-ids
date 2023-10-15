@@ -1,0 +1,102 @@
+#!/usr/bin/env perl
+
+# 08.08.2009 15:16:54 EDT
+# Harm van Bakel <hvbakel@gmail.com>
+
+# MODULES
+use strict;
+use warnings;
+use Getopt::Long;
+
+# GET PARAMETERS
+my $sHelp          = 0;
+my $sFileName      = "";
+my $sSeparator     = "\t";
+my $nCaseSensitive = 0;
+my $nIgnoreMissing = 0;
+GetOptions("help!"        => \$sHelp,
+           "file:s"       => \$sFileName,
+           "separator:s"  => \$sSeparator,
+           "ignore!"      => \$nIgnoreMissing,
+           "cs!"          => \$nCaseSensitive);
+
+# PRINT HELP
+$sHelp = 1 unless(@ARGV);
+if ($sHelp) {
+   my $sScriptName = ($0 =~ /^.*\/(.+$)/) ? $1 : $0;
+   die <<HELP
+
+   Usage: $sScriptName [-s -b] -f <file> <header-field1> .. <header-fieldN>
+   
+   Extract columns from a text file based on column header names.
+    
+   Arguments:
+    -f --file <string>
+      Name of the file to extract columns from. Leave empty to read from STDIN.
+    -s --separator <string>
+      Separator, default: tab
+    -i --ignore
+      Ignore missing columns and output all columns that are found. 
+      The default is to require all header fields to be present.
+    -cs
+      Do case-sensitive matching. The default is to do case-insensitive matching
+    -help
+      This help message
+
+HELP
+}
+
+
+###########
+## START ##
+###########
+
+# Open file and read header
+my $fh;
+if ($sFileName){
+   open $fh, $sFileName or die "Error: can't open '$sFileName': $!\n";
+}
+else{
+   $fh = *STDIN;
+}
+my $sHeader =  <$fh>;
+$sHeader    =~ s/[\n\r]//g;
+
+# Map header fields to column numbers
+my $sCommentHeader = "";
+my @asHeader       = split /$sSeparator/, $sHeader, -1;
+my $nFieldCount    = 0;
+my %hHeader;
+foreach my $sHeaderName (@asHeader){
+   my $sHeaderMatch =  $nCaseSensitive ? $sHeaderName : lc($sHeaderName);
+   if ( ($sHeaderMatch =~ /^(#+\s*)/) and ($nFieldCount==0) ){
+      $sCommentHeader = $1;
+      $sHeaderMatch   =~ s/^#+\s*//;  # Strip comment character from first field
+      $sHeaderName    =~ s/^#+\s*//;  # Strip comment character from first field
+   }
+
+   die "Error: duplicate header fields found\n" if (exists $hHeader{$sHeaderMatch});
+   $hHeader{$sHeaderMatch} = $nFieldCount++ if ($sHeaderMatch);
+}
+
+# Map input column names to numbers
+my @asColMapping;
+foreach my $sFieldName (@ARGV){
+   my $sFieldMatch = $nCaseSensitive ? $sFieldName : lc($sFieldName);
+   if ( exists $hHeader{$sFieldMatch} ){
+      push @asColMapping, $hHeader{$sFieldMatch};
+   }
+   else {
+      die "Error: '$sFieldName' not found in column header\n" unless($nIgnoreMissing);
+   }
+}
+
+# Cut and print
+print $sCommentHeader, join($sSeparator, @asHeader[@asColMapping]), "\n";
+while (<$fh>){
+   next if (/^\s*$/);
+   s/[\n\r]+$//;
+   my @asLine = split /$sSeparator/, $_, -1;
+   print join($sSeparator, @asLine[@asColMapping]), "\n";
+}
+close $fh;

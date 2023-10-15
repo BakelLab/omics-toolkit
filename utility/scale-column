@@ -1,0 +1,103 @@
+#!/usr/bin/env perl
+
+# 12.12.2012 09:22:04 EST
+# Harm van Bakel <hvbakel@gmail.com>
+
+# MODULES
+use strict;
+use warnings;
+use Getopt::Long;
+use Scalar::Util qw/ looks_like_number /;
+
+# GET PARAMETERS
+my $sHelp        = 0;
+my $nDataCol     = 0;
+my $nScaleFactor = 1;
+my $sSep         = "\t";
+GetOptions("help!"       => \$sHelp,
+           "factor:f"    => \$nScaleFactor,
+           "data-col:s"  => \$nDataCol,
+           "separator:s" => \$sSep);
+my $sFile = shift @ARGV;
+
+# PRINT HELP
+$sHelp = 1 unless($sFile);
+if ($sHelp) {
+   my $sScriptName = ($0 =~ /^.*\/(.+$)/) ? $1 : $0;
+   die <<HELP
+
+   Usage: $sScriptName [options] <matrix-file>
+   
+   Adjust the values of one column in a tab-delimited file by multiplying 
+   with a scaling factor. Track and fixed/variableStep lines are skipped
+   for compatibility with wig and bedgraph files.
+   
+   Options:
+    -factor <numeric>
+      The factor to multiply each data value with.
+      default: $nScaleFactor
+    -data-col <integer>
+      The number of the first column with numeric data
+      default: <last column in file>
+    -separator <string>
+      Column separator.
+      default: <tab>
+    -help
+      This help message
+
+HELP
+}
+
+
+##########
+## MAIN ##
+##########
+
+# Check input
+die "Error: 'scale' must be a number\n"  unless($nScaleFactor =~ /^[+-]?\d+\.?\d*$/);
+die "Error: 'data-col' must be a positive integer\n"  unless($nDataCol =~ /^[0-9]\d*$/);
+$nDataCol--; # Make the first data column zero-based
+
+# Scale the input data
+open IN, $sFile or die "Error: can't open '$sFile': $!\n";
+while (<IN>){
+   next if /^\s*$/;
+   if (/^\s*(track|fixedStep|variableStep)/i){
+      print;
+   }
+   else{
+      s/[\n\r]$//g;
+      my @asLine = split /$sSep/;
+      
+      if ($nDataCol < 0){
+         if ($asLine[$#asLine] =~ /^\d+\.?\d*$/){
+            $asLine[$#asLine] = $asLine[$#asLine] * $nScaleFactor;
+         }
+         elsif (looks_like_number($asLine[$#asLine])){
+            $asLine[$#asLine] = $asLine[$#asLine] * $nScaleFactor;
+         }
+         else{
+            die "Error: '$asLine[$#asLine]' is not a number on line $.\n";
+         }
+      }
+      else{
+         if ($nDataCol < @asLine){
+            if ($asLine[$nDataCol] =~ /^\d+\.?\d*$/){
+               $asLine[$nDataCol] = $asLine[$nDataCol] * $nScaleFactor;
+            }
+            elsif (looks_like_number($asLine[$nDataCol])){
+               warn($asLine[$nDataCol] );
+               $asLine[$nDataCol] = $asLine[$nDataCol] * $nScaleFactor;
+            }
+            else{
+               die "Error: '$asLine[$nDataCol]' is not a number on line $.\n";
+            }
+         }
+         else{
+            die "Error: column index out of range on line $.\n";
+         }
+      }
+      print join("$sSep", @asLine), "\n";
+   }
+}
+close IN;

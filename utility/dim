@@ -1,0 +1,63 @@
+#!/usr/bin/env perl
+
+# 27.01.2010 11:59:16 EST
+# Harm van Bakel <hvbakel@gmail.com>
+
+# MODULES
+use strict;
+use warnings;
+use Getopt::Long;
+
+# GET PARAMETERS
+my $sHelp        = 0;
+my $sFieldSep    = "\t";
+GetOptions("help!"   => \$sHelp);
+
+# PRINT HELP
+$sHelp = 1 unless(@ARGV>0);
+if ($sHelp) {
+   my $sScriptName = ($0 =~ /^.*\/(.+$)/) ? $1 : $0;
+   die <<HELP
+
+   Usage: $sScriptName [options] <file>
+    
+    Returns the dimensions of a matrix text file
+    
+    -fs <string>
+      Field separator. Default: <tab>
+    -help
+      This help message
+   
+HELP
+}
+
+
+##########
+## MAIN ##
+##########
+
+foreach my $sInput (@ARGV){
+   my $nUnevenRows = -1;
+   my $nLineCount  = 0;
+   my $nMaxCols    = 0;
+   my $nLastCount  = 0;
+   open IN, $sInput or die "Error: can't open '$sInput': $!\n";
+   while (<IN>){
+      s/[\n\r]+$//;
+      $nLineCount++;
+      my @asLine      = split(/$sFieldSep/,$_, -1);
+      my $nFieldCount = scalar(@asLine);
+      $nMaxCols       = $nFieldCount>$nMaxCols ? $nFieldCount : $nMaxCols;
+      $nUnevenRows++ unless ($nFieldCount == $nLastCount);
+      $nLastCount = $nFieldCount;
+   }
+   close IN;
+
+   if (@ARGV>1){
+      print "\n$sInput\n";
+      print "-" x length($sInput), "\n";
+   }
+   print " lines:   $nLineCount\n";
+   print " columns: $nMaxCols\n";
+   warn("Warning: not all lines have the same field count in file $sInput\n") if ($nUnevenRows);
+}
