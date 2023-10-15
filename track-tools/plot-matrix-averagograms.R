@@ -7,6 +7,7 @@
 # LIBRARIES #
 #############
 library(getopt);
+library(splus2R);
 
 #############
 # ARGUMENTS #
@@ -220,6 +221,22 @@ smoothData <- function(rawdata, measure="mean", interval=F, bw=1){
    return(out);
 }
 
+# Find extreme values
+msExtrema <- function(x, span=3) {
+  # find local maxima
+  index1 <- peaks(x, span=span, strict=FALSE)
+
+  # find local minima
+  index2 <- peaks(-x, span=span, strict=FALSE)
+
+  # remove the interior of plateaus
+  index.max <- index1 & !index2
+  index.min <- index2 & !index1
+
+  # construct output
+  list(index.max=index.max, index.min=index.min)
+}
+
 
 ########
 # MAIN #
@@ -362,13 +379,6 @@ if (interval){
             polygon(pol.x, pol.y, col=colors.tr[i], border=NA);
          }
       }
-   }
-}
-
-# Load extremes library if necessary
-if (!is.null(opt$extremes) | !is.null(opt$extremevals)){
-   if (!library(msProcess,quietly=T,warn.conflicts=F, logical.return=T, verbose=F)){
-      stop("Error: could not load the 'msProcess' library. Is it installed?\n");
    }
 }
 
