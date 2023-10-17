@@ -46,22 +46,24 @@ CDS_top_split <- split(CDS_top, parentcol[CDS_top])
 modifyrows <- integer(length(CDS_top_split))
 tosubtract <- integer(length(CDS_top_split))
 for(i in seq_along(CDS_top_split)){
-  cds <- CDS_top_split[[i]]
-  last <- cds[which.max(BiocGenerics::start(gff0[cds]))]
-  if(BiocGenerics::width(gff0[last]) > 3){
-    # whole stop codon is in this exon (vast majority of cases)
-    modifyrows[i] <- last
-    tosubtract[i] <- 3L
-  } else {
-    # stop codon goes into the previous exon
-    tosubtract[i] <- 3L - BiocGenerics::width(gff0[last]) # remaining nucleotides to remove
-    removerows <- c(removerows, last)
-    cds <- cds[cds != last]
-    replacement = cds[which.max(start(gff0[cds]))]
-    if (length(replacement)>0 & !is.na(replacement) ){
-      modifyrows[i] <- replacement
-    }
-  }
+   cds <- CDS_top_split[[i]]
+   last <- cds[which.max(BiocGenerics::start(gff0[cds]))]
+   if(BiocGenerics::width(gff0[last]) > 3){
+      # whole stop codon is in this exon (vast majority of cases)
+      modifyrows[i] <- last
+      tosubtract[i] <- 3L
+   } else {
+      # stop codon goes into the previous exon
+      tosubtract[i] <- 3L - BiocGenerics::width(gff0[last]) # remaining nucleotides to remove
+      removerows <- c(removerows, last)
+      cds <- cds[cds != last]
+      replacement = cds[which.max(start(gff0[cds]))]
+      if ( length(replacement)>0 ){
+         if ( !is.na(replacement) ){
+            modifyrows[i] <- replacement
+         }
+      }
+   }
 }
 BiocGenerics::end(gff0[modifyrows]) <- BiocGenerics::end(gff0[modifyrows]) - tosubtract
 
@@ -71,22 +73,24 @@ CDS_bot_split <- split(CDS_bot, parentcol[CDS_bot])
 modifyrows <- integer(length(CDS_bot_split))
 tosubtract <- integer(length(CDS_bot_split))
 for(i in seq_along(CDS_bot_split)){
-  cds <- CDS_bot_split[[i]]
-  last <- cds[which.min(BiocGenerics::start(gff0[cds]))]
-  if(BiocGenerics::width(gff0[last]) > 3){
-    # whole stop codon is in this exon (vast majority of cases)
-    modifyrows[i] <- last
-    tosubtract[i] <- 3L
-  } else {
-    # stop codon goes into the previous exon
-    tosubtract[i] <- 3L - BiocGenerics::width(gff0[last]) # remaining nucleotides to remove
-    removerows <- c(removerows, last)
-    cds <- cds[cds != last]
-    replacement = cds[which.min(BiocGenerics::start(gff0[cds]))]
-    if (length(replacement)>0 & !is.na(replacement) ){
-      modifyrows[i] <- replacement
-    }
-  }
+   cds <- CDS_bot_split[[i]]
+   last <- cds[which.min(BiocGenerics::start(gff0[cds]))]
+   if(BiocGenerics::width(gff0[last]) > 3){
+      # whole stop codon is in this exon (vast majority of cases)
+      modifyrows[i] <- last
+      tosubtract[i] <- 3L
+   } else {
+      # stop codon goes into the previous exon
+      tosubtract[i] <- 3L - BiocGenerics::width(gff0[last]) # remaining nucleotides to remove
+      removerows <- c(removerows, last)
+      cds <- cds[cds != last]
+      replacement = cds[which.min(BiocGenerics::start(gff0[cds]))]
+      if ( length(replacement)>0 ){
+         if ( !is.na(replacement) ){
+            modifyrows[i] <- replacement
+         }
+      }
+   }
 }
 BiocGenerics::start(gff0[modifyrows]) <- BiocGenerics::start(gff0[modifyrows]) + tosubtract
 
