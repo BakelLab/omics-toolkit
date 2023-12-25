@@ -7,10 +7,10 @@ Collection of scripts and utilities to analyze various types of 'omics data, org
 
 #### Conda
 
-The omics-pipelines package is available as a conda package at https://anaconda.org/hvbakel/omics-pipelines.  To install this package run the following:
+The omics-toolkit package is available as a conda package at https://anaconda.org/hvbakel/omics-tookit.  To install this package run the following:
 
 ```bash
-conda install -c conda-forge -c bioconda -c hvbakel -n omics-pipelines omics-pipelines 
+conda install -c conda-forge -c bioconda -c hvbakel -n omics-toolkit omics-toolkit 
 ```
 
 
