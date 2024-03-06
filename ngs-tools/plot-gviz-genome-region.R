@@ -18,7 +18,7 @@ args = matrix(c('input'     , 'i', 1, "character", "Input file with track file i
                 'reference' , 'r', 1, "character", "Name of the reference track (optional)",
                 'ucscgenome', 'g', 1, "character", "Set genome for optional UCSC tracks to add to plots. Default: hg38",
                 'ucsctracks', 'u', 1, "character", "Optional comma-separated list of UCSC tracks to add. Options are SegDups,KnownGenes,RefGenes,EnsGenes,CpgIslands,Conservation,GCcontent",
-                'zoom'      , 'z', 1, "character", "Zoom factor (value between -1 and 1). Default: 0.3",
+                'zoom'      , 'z', 1, "numeric",   "Flanking region to include as a fraction of the size of the selected gene locus (value between 0 and 100). Default: 0.3",
                 'datatype'  , 't', 1, "character", "Gviz data plot type. Default: histogram",
                 'output'    , 'o', 2, "character", "Name of output file (optional)",
                 'help'      , 'h', 0, "logical",   "Brief help message"
