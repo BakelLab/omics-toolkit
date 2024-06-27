@@ -84,8 +84,8 @@ for i in ${JOBNAME}_*.fa
 do
    name=`basename $i .fa`
    $GIT_REPODIR/minerva-queue-lsf/bin/submitjob $4 -c 12 -A $3 -q premium -J ${JOBNAME}${COUNTER}_ips \
-     /sc/arion/work/vanbah01/opt/interproscan-5.55-88.0/interproscan.sh -T /sc/arion/scratch/${USER}/ -i $i -goterms ${@:5} \> $name.out
-   
+     /sc/arion/projects/bakellab/reference-databases/interproscan/interproscan-5.68-100.0/interproscan.sh -T /sc/arion/scratch/${USER}/ -i $i -goterms ${@:5} \> $name.out
+
    # Increment job condition and counter
    if [ -z "$JOBCONDITION" ];
    then
