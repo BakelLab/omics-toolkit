@@ -1,0 +1,67 @@
+{% set name = "omics-toolkit" %}
+{% set version = "1.0" %}
+
+package:
+  name: "{{ name|lower }}"
+  version: "{{ version }}"
+
+source:
+  git_url: https://github.com/BakelLab/{{ name }}.git
+
+build:
+  number: 6
+
+requirements:
+  build: []
+
+  run:
+    - r-base>=4.3.0
+    - openjdk>=17.0.0
+    - perl
+    - perl-io-zlib
+    - perl-file-which
+    - perl-string-approx
+    - perl-dbi
+    - perl-bioperl
+    - python
+    - pandas
+    - pybigwig
+    - numpy
+    - r-data.tree
+    - r-dplyr
+    - r-fields
+    - r-foreach
+    - r-getopt
+    - r-ggplot2
+    - r-ggrepel
+    - r-heatmaply
+    - r-htmlwidgets
+    - r-iterators
+    - r-mclust
+    - r-nmf
+    - r-splus2r
+    - r-parallelly
+    - r-plyr
+    - r-reshape
+    - r-reshape2
+    - samtools
+    - bcftools
+    - bedtools
+    - pigz
+    - emboss
+    - ucsc-fatotwobit
+    - gffread
+    - blat
+    - bioconductor-gviz  # Required for some scripts, but currently won't install from conda
+
+test:
+  commands:
+    # The test consists of running a few key scripts
+    - bed2gff.pl
+    - intersect-by-ids
+
+about:
+  home: https://github.com/BakelLab/{{ name }}/
+  license: MIT
+  license_family: MIT
+  summary: Collection of scripts and utilities to analyze various types of 'omics data.
