@@ -52,9 +52,9 @@ library(ggplot2)
 library(reshape2)
 library(dplyr,quietly=T);
 library(NMF,quietly=T);
-library(heatmaply,quietly=T);
-library(htmlwidgets,quietly=T);
 library(data.tree,quietly=T);
+#library(heatmaply,quietly=T);
+#library(htmlwidgets,quietly=T);
 
 ########
 # MAIN #
@@ -191,7 +191,7 @@ nmf.options(grid.patch=FALSE);
 dev.off()
 
 # Make an interactive heatmap
-heatmap = heatmaply(t(out.matrix), Rowv=T, Colv=T, distfun=function(x) dist(x, method="euclidian"), margins = c(120, 250) );
-saveWidget(heatmap, paste(opt$output, "_heatmap.html", sep=""), selfcontained=F);
-unlink("Rplot001.jpeg");
+#heatmap = heatmaply(t(out.matrix), Rowv=T, Colv=T, distfun=function(x) dist(x, method="euclidian"), margins = c(120, 250) );
+#saveWidget(heatmap, paste(opt$output, "_heatmap.html", sep=""), selfcontained=F);
+#unlink("Rplot001.jpeg");
 

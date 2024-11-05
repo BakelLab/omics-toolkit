@@ -45,8 +45,8 @@ if ( !is.null(opt$help) || is.null(opt$input)) {
 
 suppressMessages(library(dplyr,quietly=T));
 suppressMessages(library(NMF,quietly=T));
-suppressMessages(library(heatmaply,quietly=T));
-suppressMessages(library(htmlwidgets,quietly=T));
+#suppressMessages(library(heatmaply,quietly=T));
+#suppressMessages(library(htmlwidgets,quietly=T));
 
 ########
 # MAIN #
@@ -180,17 +180,17 @@ tryCatch(
 nmf.options(grid.patch=FALSE);
 
 # Make an interactive heatmap plot
-outfile   = paste(opt$output,"_heatmap.html", sep="");
+#outfile   = paste(opt$output,"_heatmap.html", sep="");
 
-if (opt$cluster == "pearson") {
-    heatmap = heatmaply(d.scale, Rowv=T, Colv=T, scale_fill_gradient_fun = ggplot2::scale_fill_gradient2(low = "blue", high = "red", midpoint = 0 ), col_side_colors=annCol, distfun=function(x) as.dist((1-cor(t(x),method="pearson"))/2), margins = c(120, 120), limits=c(zmin,zmax) );
-} else if (opt$cluster == "euclidian") {
-    heatmap = heatmaply(d.scale, Rowv=T, Colv=T, scale_fill_gradient_fun = ggplot2::scale_fill_gradient2(low = "blue", high = "red", midpoint = 0 ), col_side_colors=annCol, distfun=function(x) dist(x, method="euclidian"), margins = c(120, 120), limits=c(zmin,zmax) );
-} else {
-    heatmap = heatmaply(d.scale, Rowv=F, Colv=F, scale_fill_gradient_fun = ggplot2::scale_fill_gradient2(low = "blue", high = "red", midpoint = 0 ), col_side_colors=annCol, margins = c(120, 120), limits=c(zmin,zmax) );
-}
-saveWidget(heatmap, outfile, selfcontained=F);
-unlink("Rplot001.jpeg");
+#if (opt$cluster == "pearson") {
+#    heatmap = heatmaply(d.scale, Rowv=T, Colv=T, scale_fill_gradient_fun = ggplot2::scale_fill_gradient2(low = "blue", high = "red", midpoint = 0 ), col_side_colors=annCol, distfun=function(x) as.dist((1-cor(t(x),method="pearson"))/2), margins = c(120, 120), limits=c(zmin,zmax) );
+#} else if (opt$cluster == "euclidian") {
+#    heatmap = heatmaply(d.scale, Rowv=T, Colv=T, scale_fill_gradient_fun = ggplot2::scale_fill_gradient2(low = "blue", high = "red", midpoint = 0 ), col_side_colors=annCol, distfun=function(x) dist(x, method="euclidian"), margins = c(120, 120), limits=c(zmin,zmax) );
+#} else {
+#    heatmap = heatmaply(d.scale, Rowv=F, Colv=F, scale_fill_gradient_fun = ggplot2::scale_fill_gradient2(low = "blue", high = "red", midpoint = 0 ), col_side_colors=annCol, margins = c(120, 120), limits=c(zmin,zmax) );
+#}
+#saveWidget(heatmap, outfile, selfcontained=F);
+#unlink("Rplot001.jpeg");
 
 # Make violin plots per gene
 if( nrow(d) > 0 ){
