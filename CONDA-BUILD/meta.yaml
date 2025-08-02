@@ -15,8 +15,6 @@ requirements:
   build: []
 
   run:
-    - r-base>=4.3.0
-    - openjdk>=17.0.0
     - perl
     - perl-io-zlib
     - perl-file-which
@@ -27,6 +25,7 @@ requirements:
     - pandas
     - pybigwig
     - numpy
+    - r-base>=4.3.0
     - r-data.tree
     - r-dplyr
     - r-fields
@@ -46,11 +45,8 @@ requirements:
     - bcftools
     - bedtools
     - pigz
-    - emboss
-    - ucsc-fatotwobit
     - gffread
-    - blat
-    - bioconductor-gviz  # Required for some scripts, but currently won't install from conda
+    - omics-bintools
 
 test:
   commands:

@@ -33,52 +33,31 @@ then
    fi
 fi
 
-# Check for picard
-if [[ -z "$PICARD" ]]
-then
-   if ! command -v picard &> /dev/null
-   then
-      if command -v module &> /dev/null
-      then
-         module load picard && echo "Loaded picard module" || echo "Error: failed to load picard module"
-      else
-         echo "Error: picard is not installed"
-         exit 1
-      fi
-   else
-      PICARD="picard"
-   fi
-fi
+# --- Paired-End Detection ---
+# A more robust check for paired-end data is to count reads with the 'paired' flag.
+# We also skip unmapped reads, as they might not have the flag set correctly.
+echo "🔎 Checking for paired-end reads..."
+fastq_count=$(samtools view -c -f 1 -F 4 "$bamfile")
 
-# Figure out how many fastq files were aligned (i.e. distinguish between paired and single-end
-fastq_count=`samtools view -H ${bamfile} | grep '^@PG'| head -n1 | grep -o '\.fastq' | wc -l`
-
-# Set parameters for terashuf
-export TMPDIR=/sc/arion/scratch/$USER/tmp/
+# --- Setup for Terashuf ---
+export TMPDIR=${SCRATCH:-/tmp}/$USER/tmp/
 export MEMORY=20
-echo "TMPDIR: $TMPDIR" >  ${outpath}/${outprefix}_bam2fastq.log
-echo "MEMORY: $MEMORY" >> ${outpath}/${outprefix}_bam2fastq.log
+mkdir -p "$TMPDIR"
+echo "TMPDIR: $TMPDIR" >  "${outpath}/${outprefix}_bam2fastq.log"
+echo "MEMORY: $MEMORY" >> "${outpath}/${outprefix}_bam2fastq.log"
 
 # Do conversion for single or paired-end format
-if [[ $fastq_count = 2 ]]
-then
-   java -jar ${PICARD} SamToFastq \
-      INPUT=${bamfile} \
-      FASTQ=${outpath}/${outprefix}_1.fastq.gz \
-      SECOND_END_FASTQ=${outpath}/${outprefix}_2.fastq.gz \
-      UNPAIRED_FASTQ=${outpath}/${outprefix}_up.fastq.gz \
-      VALIDATION_STRINGENCY=SILENT \
-      >> ${outpath}/${outprefix}_bam2fastq.log 2>&1
+if [[ $fastq_count -gt 0 ]]; then
+    echo "✅ Paired-end reads detected. Starting fully streaming conversion..."
+    
+    # This single pipeline does everything in memory and on-the-fly.
+    samtools fastq -@ 8 -n "$bamfile" | \
+    paste - - - - - - - - | \
+    terashuf | \
+    awk -v outa="${outpath}/${outprefix}_1.fastq.shuf" -v outb="${outpath}/${outprefix}_2.fastq.shuf" -F'\t' '{OFS="\n"; print $1,$2,$3,$4 | "gzip > "outa".gz"; print $5,$6,$7,$8 | "gzip > "outb".gz"}'
 
-   paste <(zcat ${outpath}/${outprefix}_1.fastq.gz) <(zcat ${outpath}/${outprefix}_2.fastq.gz) | paste - - - - | terashuf | awk -v outa=${outpath}/${outprefix}_1.fastq.shuf -v outb=${outpath}/${outprefix}_2.fastq.shuf -F'\t' '{OFS="\n"; print $1,$3,$5,$7 | "gzip > "outa".gz"; print $2,$4,$6,$8 | "gzip > "outb".gz"}'
-   rm -f ${outpath}/${outprefix}_1.fastq.gz ${outpath}/${outprefix}_2.fastq.gz
 else
-   java -jar ${PICARD} SamToFastq \
-      INPUT=${bamfile} \
-      FASTQ=${outpath}/${outprefix}.fastq.gz \
-      VALIDATION_STRINGENCY=SILENT \
-      >> ${outpath}/${outprefix}_bam2fastq.log 2>&1
-
-   gunzip -c ${outpath}/${outprefix}.fastq.gz | terashuf | gzip > ${outpath}/${outprefix}.fastq.shuf.gz
-   rm -f ${outprefix}.fastq.gz
+    # The single-end logic is already fully streaming and efficient.
+    echo "✅ Single-end reads detected. Starting conversion..."
+    samtools fastq -@ 8 "$bamfile" | terashuf | gzip > "${outpath}/${outprefix}.fastq.shuf.gz"
 fi
