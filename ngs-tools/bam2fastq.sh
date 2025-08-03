@@ -1,63 +1,68 @@
 #!/bin/bash
 
-# 01.09.2018 14:10:58 EDT
-# Harm van Bakel <hvbakel@gmail.com>
+# --- Configuration ---
+# This script converts a BAM file to shuffled FASTQ, auto-detecting
+# if the reads are single-end or paired-end. It uses terashuf for
+# out-of-core shuffling and pigz for multi-threaded compression.
 
-# Globals
-bamfile=$1
-outpath=${2:-./}
-outprefix=`basename $bamfile .bam`
+set -e # Exit immediately if a command exits with a non-zero status.
 
-if [[ -z "$1" ]]
-then
-   echo -e "\nUsage: bam2fastq.sh <bam> [output-path]\n"
-   exit 0
+# --- USAGE ---
+if [ "$#" -ne 2 ]; then
+    echo "Usage: $0 /path/to/your.bam output_prefix"
+    echo "Example: $0 my_data.bam my_shuffled_reads"
+    exit 1
 fi
 
-# Check for terashuf
-if ! command -v terashuf &> /dev/null
-then
-   echo "Error: terashuf is not installed"
-   exit 1
-fi
+# --- Variables ---
+BAM_FILE="$1"
+OUT_PREFIX="$2"
+THREADS=12
+RANDOM_SEED=100 # Use a fixed seed for reproducibility
 
-# Check for samtools
-if ! command -v samtools &> /dev/null
-then
-   if command -v module &> /dev/null
-   then
-      module load samtools && echo "Loaded samtools module" || echo "Error: failed to load samtools module"
-   else
-      echo "Error: samtools is not installed"
-      exit 1
-   fi
+# --- Dependency Checks ---
+if ! command -v terashuf &> /dev/null; then
+    echo "Error: terashuf is not installed" >&2
+    exit 1
+fi
+if ! command -v samtools &> /dev/null; then
+    echo "Error: samtools is not installed" >&2
+    exit 1
+fi
+if ! command -v pigz &> /dev/null; then
+    echo "Error: pigz is not installed" >&2
+    exit 1
 fi
 
 # --- Paired-End Detection ---
-# A more robust check for paired-end data is to count reads with the 'paired' flag.
-# We also skip unmapped reads, as they might not have the flag set correctly.
 echo "🔎 Checking for paired-end reads..."
-fastq_count=$(samtools view -c -f 1 -F 4 "$bamfile")
+PAIRED_COUNT=$(samtools view -c -f 1 -F 4 "$BAM_FILE")
 
 # --- Setup for Terashuf ---
 export TMPDIR=${SCRATCH:-/tmp}/$USER/tmp/
 export MEMORY=20
 mkdir -p "$TMPDIR"
-echo "TMPDIR: $TMPDIR" >  "${outpath}/${outprefix}_bam2fastq.log"
-echo "MEMORY: $MEMORY" >> "${outpath}/${outprefix}_bam2fastq.log"
+echo "TMPDIR: $TMPDIR" >  "${OUT_PREFIX}_bam2fastq.log"
+echo "MEMORY: $MEMORY" >> "${OUT_PREFIX}_bam2fastq.log"
 
-# Do conversion for single or paired-end format
-if [[ $fastq_count -gt 0 ]]; then
+# --- Main Logic ---
+if [[ $PAIRED_COUNT -gt 0 ]]; then
+    ### PAIRED-END WORKFLOW ###
     echo "✅ Paired-end reads detected. Starting fully streaming conversion..."
     
-    # This single pipeline does everything in memory and on-the-fly.
-    samtools fastq -@ 8 -n "$bamfile" | \
-    paste - - - - - - - - | \
-    terashuf | \
-    awk -v outa="${outpath}/${outprefix}_1.fastq.shuf" -v outb="${outpath}/${outprefix}_2.fastq.shuf" -F'\t' '{OFS="\n"; print $1,$2,$3,$4 | "gzip > "outa".gz"; print $5,$6,$7,$8 | "gzip > "outb".gz"}'
+    samtools collate -@ $THREADS -O "$BAM_FILE" | \
+      samtools fastq -@ $THREADS -n - | \
+      paste - - - - - - - - | \
+      terashuf | \
+      awk -v outa="${OUT_PREFIX}_1.fastq.shuf" -v outb="${OUT_PREFIX}_2.fastq.shuf" -v p="$THREADS" -F'\t' '{OFS="\n"; print $1,$2,$3,$4 | "pigz -p "p" > "outa".gz"; print $5,$6,$7,$8 | "pigz -p "p" > "outb".gz"}'
 
 else
-    # The single-end logic is already fully streaming and efficient.
-    echo "✅ Single-end reads detected. Starting conversion..."
-    samtools fastq -@ 8 "$bamfile" | terashuf | gzip > "${outpath}/${outprefix}.fastq.shuf.gz"
+    ### SINGLE-END WORKFLOW ###
+    echo "✅ No paired reads found. Running single-end workflow..."
+    
+    samtools fastq -@ $THREADS "$BAM_FILE" | \
+      terashuf | \
+      pigz -p "$THREADS" > "${OUT_PREFIX}.fastq.shuf.gz"
 fi
+
+echo "🎉 Done."
