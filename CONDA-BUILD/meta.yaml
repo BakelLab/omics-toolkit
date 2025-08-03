@@ -20,7 +20,6 @@ requirements:
     - perl-file-which
     - perl-string-approx
     - perl-dbi
-    - perl-bioperl
     - python
     - pandas
     - pybigwig
@@ -46,6 +45,7 @@ requirements:
     - bedtools
     - pigz
     - gffread
+    - blat
     - omics-bintools
 
 test:
